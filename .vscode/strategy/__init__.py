@@ -1,0 +1,2 @@
+from .doubleCloudMAStrategy import DoubleCloudMAStrategy
+from .singleCloudMAStrategy import SingleCloudMAStrategy
