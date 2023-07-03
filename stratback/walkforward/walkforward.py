@@ -87,7 +87,7 @@ class WalkforwardOptimization:
                 study_name=self.strategy.__name__ + str(now),
                 sampler=self.sampler,
                 directions=list(self.optimization_targets.values()),
-                storage="sqlite:///db.sqlite3",
+                storage=self.kwargs.get("storage", None),
                 load_if_exists=True,
                 pruner=self.kwargs.get("pruner", None),
             )
@@ -96,7 +96,7 @@ class WalkforwardOptimization:
                 study_name=self.strategy.__name__ + str(now),
                 sampler=self.sampler,
                 direction=list(self.optimization_targets.values())[0],
-                storage="sqlite:///db.sqlite3",
+                storage=self.kwargs.get("storage", None),
                 load_if_exists=True,
                 pruner=self.kwargs.get("pruner", None),
             )
@@ -106,9 +106,10 @@ class WalkforwardOptimization:
             n_jobs=-1,
             show_progress_bar=True,
         )
-        print(
-            "Survey analysis done. run `optuna-dashboard sqlite:///db.sqlite3` in terminal to see the results"
-        )
+        msg = "Survey analysis done."
+        if self.kwargs.get("storage", None):
+            msg += f" Run `optuna-dashboard {self.kwargs.get('storage',None)}` in terminal to see the results"
+        print(msg)
         return study
 
     @cached_property
@@ -122,9 +123,18 @@ class WalkforwardOptimization:
         optim_directions = list(self.optimization_targets.values())
         for i in range(len(self.profit_surface_study.trials[0].values)):
             d = []
-            fig = optuna.visualization.plot_slice(self.profit_surface_study, target_name=targets[i], target=lambda t: t.values[i])
+            fig = optuna.visualization.plot_slice(
+                self.profit_surface_study,
+                target_name=targets[i],
+                target=lambda t: t.values[i],
+            )
             for j, k in enumerate(self.profit_surface_study.trials[0].params.keys()):
-                d.append(pd.DataFrame(np.vstack((fig.data[j].x, fig.data[j].y)).T, columns=[k, targets[i]]))
+                d.append(
+                    pd.DataFrame(
+                        np.vstack((fig.data[j].x, fig.data[j].y)).T,
+                        columns=[k, targets[i]],
+                    )
+                )
             df[targets[i]] = pd.concat(d, axis=0)
 
         df_conclusion = {}
@@ -132,11 +142,77 @@ class WalkforwardOptimization:
             d = {}
             for k in self.profit_surface_study.trials[0].params.keys():
                 if optim_directions[i] == "maximize":
-                    d[k] = df[targets[i]].groupby(k)[targets[i]].mean().rolling(3).mean().idxmax()
+                    d[k] = (
+                        df[targets[i]]
+                        .groupby(k)[targets[i]]
+                        .mean()
+                        .rolling(3)
+                        .mean()
+                        .idxmax()
+                    )
                 else:
-                    d[k] = df[targets[i]].groupby(k)[targets[i]].mean().rolling(3).mean().idxmin()
+                    d[k] = (
+                        df[targets[i]]
+                        .groupby(k)[targets[i]]
+                        .mean()
+                        .rolling(3)
+                        .mean()
+                        .idxmin()
+                    )
             df_conclusion[targets[i]] = d
         return df_conclusion
+
+    def optimize(self):
+        data = self.data[
+            self.data.day.ge(self.days[-self.lookback])
+        ].reset_index()
+        assert (
+            len(data.day.unique()) == self.lookback
+        ), f"Data length ({len(data.day.unique())}) not equal to lookback period of {self.lookback}."
+        objective = objective_generator(
+            data,
+            self.strategy,
+            strategy_kwargs=self.strategy_kwargs,
+            optimization_params=self.optimization_params,
+            optimization_targets=self.optimization_targets,
+            best_trial_function=self.best_trial_function,
+            **self.kwargs,
+        )
+        now = datetime.datetime.now()
+
+        if len(self.optimization_targets) > 1:
+            study = optuna.create_study(
+                study_name=self.strategy.__name__ + str(now),
+                sampler=self.sampler,
+                directions=list(self.optimization_targets.values()),
+                storage=self.kwargs.get("storage", None),
+                load_if_exists=True,
+                pruner=self.kwargs.get("pruner", None),
+            )
+        else:
+            study = optuna.create_study(
+                study_name=self.strategy.__name__ + str(now),
+                sampler=self.sampler,
+                direction=list(self.optimization_targets.values())[0],
+                storage=self.kwargs.get("storage", None),
+                load_if_exists=True,
+                pruner=self.kwargs.get("pruner", None),
+            )
+        additional_trials = self.kwargs.get("enqueue_trials", None)
+        if additional_trials:
+            for trial in additional_trials:
+                study.enqueue_trial(trial)
+        study.optimize(
+            objective,
+            n_trials=self.kwargs.get("max_trials", 1000),
+            n_jobs=-1,
+            show_progress_bar=True,
+        )
+        msg = "Survey analysis done."
+        if self.kwargs.get("storage", None):
+            msg += f" Run `optuna-dashboard {self.kwargs.get('storage',None)}` in terminal to see the results"
+        print(msg)
+        return study
 
     def walk(self):
         trades = []
@@ -166,7 +242,7 @@ class WalkforwardOptimization:
             if "pruner" in subset_kwargs:
                 subset_kwargs["pruner"] = str(subset_kwargs["pruner"])
             json.dump(subset_kwargs, outfile)
-        
+
         backtest_outputs_current_and_forward = []
 
         for i in reversed(
@@ -258,7 +334,9 @@ class WalkforwardOptimization:
             apply_forward_output = WalkforwardOptimization.backtest(
                 self.oos_data, self.strategy, **backtest_params
             )
-            backtest_outputs_current_and_forward.append((apply_current_output, apply_forward_output))
+            backtest_outputs_current_and_forward.append(
+                (apply_current_output, apply_forward_output)
+            )
             eq_curve = apply_forward_output._trades
             eq_curve["date"] = pd.DatetimeIndex(
                 apply_forward_output._trades.EntryTime
