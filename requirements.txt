@@ -1,0 +1,15 @@
+bokeh==2.4.3
+httpx==0.23.0
+numpy==1.23.5
+optuna==3.2.0
+pandas==1.4.4
+pandas==2.0.3
+pandas_ta==0.3.14b
+plotly==5.15.0
+python-dotenv==1.0.0
+scikit_optimize==0.9.0
+scipy==1.10.0
+tda_api==1.6.0
+tqdm==4.65.0
+vectorbt==0.24.3
+yfinance==0.2.22
