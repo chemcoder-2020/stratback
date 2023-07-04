@@ -65,9 +65,22 @@ class WalkforwardOptimization:
             pass
 
         bt = Backtest(
-            data, strategy, cash=30000, commission=0.000, exclusive_orders=True
+            data,
+            strategy,
+            cash=30000,
+            commission=0.000,
+            exclusive_orders=kwargs.get("exclusive_orders", True),
         )
         output = bt.run(**kwargs)
+
+        if kwargs.get("plot_bt", False):
+            bt.plot(
+                plot_return=True,
+                plot_equity=True,
+                plot_pl=False,
+                relative_equity=False,
+                resample=False,
+            )
         return output
 
     def profit_surface(self):
@@ -163,9 +176,7 @@ class WalkforwardOptimization:
         return df_conclusion
 
     def optimize(self):
-        data = self.data[
-            self.data.day.ge(self.days[-self.lookback])
-        ].reset_index()
+        data = self.data[self.data.day.ge(self.days[-self.lookback])].reset_index()
         assert (
             len(data.day.unique()) == self.lookback
         ), f"Data length ({len(data.day.unique())}) not equal to lookback period of {self.lookback}."
@@ -212,6 +223,14 @@ class WalkforwardOptimization:
         if self.kwargs.get("storage", None):
             msg += f" Run `optuna-dashboard {self.kwargs.get('storage',None)}` in terminal to see the results"
         print(msg)
+        bt_params = self.strategy_kwargs.copy()
+        best_trial = max(study.best_trials, key=self.best_trial_function)
+        # best_trial.params
+        # best_trial.values
+        bt_params.update(best_trial.params)
+        bt_params["plot_bt"] = self.kwargs.get("plot_bt", True)
+        output = WalkforwardOptimization.backtest(data, self.strategy, bt_params)
+        print(output)
         return study
 
     def walk(self):
@@ -574,6 +593,8 @@ Profit Factor: {apply_forward_output["Profit Factor"]:.2f},
             )
 
             plotly_fig.write_html(f"{name}.html")
+            self.typ_sl = plotly_df["Typical SL"]
+            self.typ_tp = plotly_df["Typical TP"]
 
         if self.kwargs.get("detailed_optimization", False):
             with open(f"{name}.pkl", "wb") as file:
