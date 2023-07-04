@@ -282,16 +282,29 @@ class WalkforwardOptimization:
             assert (
                 len(self.in_sample_data["day"].unique()) == self.lookback
             ), f"in-sample data not equal to lookback {self.lookback}"
-
-            objective = objective_generator(
-                self.in_sample_data,
-                self.strategy,
-                strategy_kwargs=self.strategy_kwargs,
-                optimization_params=self.optimization_params,
-                optimization_targets=self.optimization_targets,
-                best_trial_function=self.best_trial_function,
-                **self.kwargs,
-            )
+            
+            if i == self.walk_length + self.lookback:
+                objective = objective_generator(
+                    self.in_sample_data,
+                    self.strategy,
+                    strategy_kwargs=self.strategy_kwargs,
+                    optimization_params=self.optimization_params,
+                    optimization_targets=self.optimization_targets,
+                    best_trial_function=self.best_trial_function,
+                    skip_earlystopping=True,
+                    **self.kwargs,
+                )
+            else:
+                objective = objective_generator(
+                    self.in_sample_data,
+                    self.strategy,
+                    strategy_kwargs=self.strategy_kwargs,
+                    optimization_params=self.optimization_params,
+                    optimization_targets=self.optimization_targets,
+                    best_trial_function=self.best_trial_function,
+                    skip_earlystopping=False,
+                    **self.kwargs,
+                )
 
             if len(self.optimization_targets) > 1:
                 study = optuna.create_study(
@@ -610,6 +623,7 @@ def objective_generator(
     optimization_params,
     optimization_targets,
     best_trial_function,
+    skip_earlystopping=False,
     **kwargs,
 ):
     """Generate objective function based on the current in_sample_data for optimization
@@ -641,7 +655,7 @@ def objective_generator(
         )
         obj = tuple(backtest_output[optimization_targets.keys()].values)
 
-        if trial.number > kwargs.get("min_trials", 50):
+        if trial.number > kwargs.get("min_trials", 50) and not skip_earlystopping:
             if len(optimization_targets) > 1:
                 obj_value = np.round(best_trial_function(obj), 2)
                 best_trial = max(
