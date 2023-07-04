@@ -229,7 +229,7 @@ class WalkforwardOptimization:
         # best_trial.values
         bt_params.update(best_trial.params)
         bt_params["plot_bt"] = self.kwargs.get("plot_bt", True)
-        output = WalkforwardOptimization.backtest(data, self.strategy, bt_params)
+        output = WalkforwardOptimization.backtest(data, self.strategy, **bt_params)
         print(output)
         return study
 
