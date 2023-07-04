@@ -56,7 +56,7 @@ class WalkforwardOptimization:
             ),
         )
 
-    def backtest(data, strategy, **kwargs):
+    def backtest(data, strategy, plot_bt=False, **kwargs):
         data = data.copy()
         data.columns = data.columns.str.capitalize()
         try:
@@ -73,7 +73,7 @@ class WalkforwardOptimization:
         )
         output = bt.run(**kwargs)
 
-        if kwargs.get("plot_bt", False):
+        if plot_bt:
             bt.plot(
                 plot_return=True,
                 plot_equity=True,
@@ -224,12 +224,14 @@ class WalkforwardOptimization:
             msg += f" Run `optuna-dashboard {self.kwargs.get('storage',None)}` in terminal to see the results"
         print(msg)
         bt_params = self.strategy_kwargs.copy()
-        best_trial = max(study.best_trials, key=self.best_trial_function)
-        # best_trial.params
-        # best_trial.values
-        bt_params.update(best_trial.params)
-        bt_params["plot_bt"] = self.kwargs.get("plot_bt", True)
-        output = WalkforwardOptimization.backtest(data, self.strategy, **bt_params)
+        if len(self.optimization_targets) > 1:
+            best_trial = max(study.best_trials, key=self.best_trial_function)
+            bt_params.update(best_trial.params)
+        else:
+            bt_params.update(study.best_params)
+        output = WalkforwardOptimization.backtest(
+            data, self.strategy, plot_bt=self.kwargs.get("plot_bt", True), **bt_params
+        )
         print(output)
         return study
 
