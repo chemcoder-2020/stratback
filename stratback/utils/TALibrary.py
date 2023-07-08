@@ -204,6 +204,71 @@ def ma_double_cloud_signal(
         return signal
 
 
+def price_position_by_pivots(data, secondary_tf="D", pivot_data_shift=78):
+    data = data.copy().reset_index()
+    data.columns = data.columns.str.lower()
+    if "date" in data.columns:
+        data = data.set_index("date")
+    pivot_data = data.shift(pivot_data_shift)
+
+    high = pivot_data.high.groupby(pivot_data.index.to_period(secondary_tf)).max()
+    high.index = (
+        pd.Series(pivot_data.index)
+        .groupby(pivot_data.index.to_period(secondary_tf))
+        .last()
+    )
+    high = pivot_data.align(high, axis=0)[1].bfill()
+
+    low = pivot_data.low.groupby(pivot_data.index.to_period(secondary_tf)).min()
+    low.index = (
+        pd.Series(pivot_data.index)
+        .groupby(pivot_data.index.to_period(secondary_tf))
+        .last()
+    )
+    low = pivot_data.align(low, axis=0)[1].bfill()
+
+    close = pivot_data.close.groupby(pivot_data.index.to_period(secondary_tf)).last()
+    close.index = (
+        pd.Series(pivot_data.index)
+        .groupby(pivot_data.index.to_period(secondary_tf))
+        .last()
+    )
+    close = pivot_data.align(close, axis=0)[1].bfill()
+
+    hlc3 = (high + low + close) / 3
+    xLow = low
+    xHigh = high
+    vPP = hlc3
+    vR1 = vPP + (vPP - xLow)
+    vS1 = vPP - (xHigh - vPP)
+    vR2 = vPP + (xHigh - xLow)
+    vS2 = vPP - (xHigh - xLow)
+    vR3 = vR1 + (xHigh - xLow)
+    vS3 = vS1 - (xHigh - xLow)
+    vR4 = vR1 + 2 * (xHigh - xLow)
+    vS4 = vS1 - 2 * (xHigh - xLow)
+    vR5 = vR1 + 3 * (xHigh - xLow)
+    vS5 = vS1 - 3 * (xHigh - xLow)
+
+    p5 = data.close.between(vR5, np.inf)
+    p4 = data.close.between(vR4, vR5)
+    p3 = data.close.between(vR3, vR4)
+    p2 = data.close.between(vR2, vR3)
+    p1 = data.close.between(vR1, vR2)
+    p0 = data.close.between(vPP, vR1)
+    p_1 = data.close.between(vS1, vPP)
+    p_2 = data.close.between(vS2, vS1)
+    p_3 = data.close.between(vS3, vS2)
+    p_4 = data.close.between(vS4, vS3)
+    p_5 = data.close.between(vS5, vS4)
+    p_6 = data.close.between(-np.inf, vS5)
+    
+    price_position = pd.concat(
+        [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
+    ).apply(np.argmax, axis=1)
+    return price_position
+
+
 def EhlersRoofing(close, fast_length, slow_length):
     return EhlersSuperSmoother(EhlersHighpass(close, slow_length), fast_length)
 

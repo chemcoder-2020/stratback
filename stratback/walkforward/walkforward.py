@@ -9,6 +9,7 @@ from os.path import exists, join
 import json
 import pickle
 from functools import cached_property
+import warnings
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.display.max_columns = 200
@@ -329,30 +330,34 @@ class WalkforwardOptimization:
                 print("best_params does not exist yet")
 
             # print(self.strategy_kwargs)
+            try:
+                study.optimize(
+                    objective,
+                    n_trials=self.kwargs.get("max_trials", 1000),
+                    n_jobs=-1,
+                    show_progress_bar=True,
+                )
+                if len(self.optimization_targets) > 1:
+                    best_trial = max(study.best_trials, key=self.best_trial_function)
+                    best_params = best_trial.params
 
-            study.optimize(
-                objective,
-                n_trials=self.kwargs.get("max_trials", 1000),
-                n_jobs=-1,
-                show_progress_bar=True,
-            )
-            if len(self.optimization_targets) > 1:
-                best_trial = max(study.best_trials, key=self.best_trial_function)
-                best_params = best_trial.params
-
-            else:
-                best_params = study.best_params
-
-            backtest_params = self.strategy_kwargs.copy()
-
-            for k, v in best_params.items():
-                if int(v) == float(v):
-                    backtest_params[k] = v
                 else:
-                    backtest_params[k] = np.floor(v * 1000) / 1000
+                    best_params = study.best_params
 
-            print(best_params)
-            print(backtest_params)
+                backtest_params = self.strategy_kwargs.copy()
+
+                for k, v in best_params.items():
+                    if int(v) == float(v):
+                        backtest_params[k] = v
+                    else:
+                        backtest_params[k] = np.floor(v * 1000) / 1000
+
+                print(best_params)
+                print(backtest_params)
+            except Exception as e:
+                print(e)
+                warnings.warn("Optimization failed. Re-use previously optimized parameters")
+                
 
             self.oos_data = self.data[
                 self.data.day.gt(self.days[-i]) & self.data.day.le(self.days[-j])
@@ -593,7 +598,9 @@ Profit Factor: {apply_forward_output["Profit Factor"]:.2f},
                 text=txt,
                 hoverinfo="all",
             )
-            plotly_fig = go.Figure(data=[candlestick])
+            sma200 = go.Line(x=plotly_df["date"], y=plotly_df["PnL"].rolling(200).mean())
+            sma50 = go.Line(x=plotly_df["date"], y=plotly_df["PnL"].rolling(50).mean())
+            plotly_fig = go.Figure(data=[candlestick, sma50, sma200])
             plotly_fig.update_layout(xaxis_rangeslider_visible=False)
 
             plotly_fig.update_layout(
