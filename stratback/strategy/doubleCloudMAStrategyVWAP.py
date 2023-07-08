@@ -7,30 +7,30 @@ from stratback.utils.TALibrary import (
     vwap,
 )
 import datetime
+import re
 
 
 class DoubleCloudMAStrategyVWAP(Strategy):
-    n1 = 11
-    n2 = 23
-    size = 1
     target_pct = 0.7
+    HTF1 = "D"
+    HTF2 = "W"
+    HTF3 = "M"
+    size = None
     long_only = True
     short_only = False
-    assume_downtrend_follows_uptrend = True
+    assume_downtrend_follows_uptrend = False
     daytrade = True
     with_longX = True
     with_shortX = True
     pl_pct_tp = None
     limit_pct = None
     stop_pct = None
-    HTF1 = "D"
-    HTF2 = "W"
+    
 
     def ma_double_cloud_signal(
         self,
         data,
         target_pct=0.7,
-        price_for_ma="Open",
         long_only=False,
         short_only=False,
         assume_downtrend_follows_uptrend=True,
@@ -38,27 +38,32 @@ class DoubleCloudMAStrategyVWAP(Strategy):
         with_shortX=False,
     ):
         data = data.copy()
-        ma_length1 = self.n1
-        ma_length2 = self.n2
 
         if "date" in data.columns:
             data.set_index("date", inplace=True)
         data["day"] = pd.DatetimeIndex(data.index).date
         data["isFirstBar"] = data["day"].diff() >= "1 days"
-        price = data[price_for_ma]
         volume = data.Volume
         high = data.High
         low = data.Low
-        avwap_htf1 = data.ta.vwap(anchor=self.HTF1)
-        avwap_htf2 = data.ta.vwap(anchor=self.HTF2)
-        avwap_uptrend = avwap_htf1.gt(avwap_htf2)
-        ma1 = vwap(price, volume, ma_length1)
-        ma2 = vwap(price, volume, ma_length2)
+        def calc_vwap(df, tf):
+            if re.split("\d", tf) in ["H", "min"]:
+                return ((df.ta.hlc3() * df.volume).groupby(df.index.floor(tf)).cumsum() / df.volume.groupby(df.index.floor(tf)).cumsum())
+            else:
+                return df.ta.vwap(anchor=tf)
+        
+        rsi = pt.rsi(data.ta.hlc3(), 10)
 
-        ma_mid = (ma1 + ma2) / 2
-        ma_bandwidth = ma1 - ma2
-        longTarget = (target_pct / 100 + 1) * ma_mid
-        shortTarget = ma_mid / (target_pct / 100 + 1)
+        avwap_htf1 = calc_vwap(data, self.HTF1)
+        avwap_htf2 = calc_vwap(data, self.HTF2)
+        avwap_htf3 = calc_vwap(data, self.HTF3)
+        avwap_uptrend = avwap_htf1.gt(avwap_htf2) & avwap_htf2.gt(avwap_htf3)
+        avwap_dntrend = avwap_htf1.lt(avwap_htf2) & avwap_htf2.lt(avwap_htf3)
+        avwap_crossover = avwap_htf1.gt(avwap_htf2) & avwap_htf1.shift().lt(avwap_htf2.shift())
+        avwap_crossunder = avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().gt(avwap_htf2.shift())
+
+        longTarget = (target_pct / 100 + 1) * avwap_htf1
+        shortTarget = avwap_htf1 / (target_pct / 100 + 1)
         if with_longX:
             longExit = high > longTarget
         else:
@@ -68,37 +73,19 @@ class DoubleCloudMAStrategyVWAP(Strategy):
             shortExit = low < shortTarget
         else:
             shortExit = pd.Series([False] * len(data), index=data.index)
-        trend_up = ma1.gt(ma2)
-        trend_dn = ma1.lt(ma2)
-        rsi = pt.rsi(data.ta.hlc3(), 10)
-        strong_trend = rsi.gt(20) & rsi.lt(80)
-
-        momentum_condition1 = (rsi.gt(rsi.shift())).fillna(False)
-        momentum_condition = momentum_condition1
-        newday_trendup_continuation = (
+        
+        buy_call_open = (
             data["isFirstBar"].fillna(False)
-            & strong_trend
-            & (trend_up.fillna(False) & ~longExit)
-            & ma_bandwidth.pct_change().gt(0)
-            & momentum_condition
+            & avwap_uptrend
         )
-        newday_trenddn_continuation = (
+        buy_put_open = (
             data["isFirstBar"].fillna(False)
-            & strong_trend
-            & (trend_dn.fillna(False) & ~shortExit)
-            & ma_bandwidth.pct_change().lt(0)
-            & ~momentum_condition
+            & avwap_dntrend
         )
 
-        longCondition = ((
-            (trend_up & ~trend_up.shift().fillna(False))
-            & momentum_condition
-        ) | newday_trendup_continuation) & avwap_uptrend
+        longCondition = buy_call_open | avwap_crossover
 
-        shortCondition = ((
-            (trend_dn & ~trend_dn.shift().fillna(False))
-            & ~momentum_condition
-        ) | newday_trenddn_continuation) & ~avwap_uptrend
+        shortCondition = buy_put_open | avwap_crossunder
 
         if self.daytrade:
             in_session = pd.Series(
@@ -135,7 +122,7 @@ class DoubleCloudMAStrategyVWAP(Strategy):
                     index=data.index,
                 ),
             )
-        return long, short, longX, shortX, longTarget, shortTarget, ma_mid, rsi, eod
+        return long, short, longX, shortX, longTarget, shortTarget, avwap_htf1, rsi, eod
 
     def init(self):
         (
