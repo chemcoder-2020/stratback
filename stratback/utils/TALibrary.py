@@ -89,6 +89,8 @@ def ma_cloud_signal(
     data = data.copy()
     if "date" in data.columns:
         data.set_index("date", inplace=True)
+    data["day"] = pd.DatetimeIndex(data.index).date
+    data["isFirstBar"] = data["day"].diff() >= "1 days"
     price = data[price_for_ma]
     volume = data.volume
     high = data.high
@@ -102,7 +104,14 @@ def ma_cloud_signal(
     shortExit = low < shortTarget
     trend_up = ma1.gt(ma2)
     trend_down = ma1.lt(ma2)
-    long = trend_up & ~trend_up.shift().fillna(False)
+    rsi = pt.rsi(data.open, 10)
+    strong_trend = rsi.gt(40) & rsi.lt(80)
+    newday_trendup_continuation = (
+        data["isFirstBar"].fillna(False)
+        & strong_trend
+        & (trend_up.fillna(False) & ~longExit)
+    )
+    long = (trend_up & ~trend_up.shift().fillna(False)) | newday_trendup_continuation
     longX = longExit
     short = longExit
     shortX = shortExit | long
@@ -116,6 +125,109 @@ def ma_cloud_signal(
     signal["longTarget"] = longTarget
     signal["shortTarget"] = shortTarget
     signal["maMID"] = ma_mid
+    signal["RSI"] = rsi
+    signal["EOD"] = pd.DatetimeIndex(signal.index).time == datetime.time(12, 50)
+    if shift:
+        return signal.shift()
+    else:
+        return signal
+
+
+def ma_cloud_ichimoku_signal(
+    data,
+    ma_length1=15,
+    ma_length2=24,
+    target_pct=0.67,
+    ichimoku_conversionLine_length=9,
+    ichimoku_baseLine_length=26,
+    price_for_ma="open",
+    shift=False,
+):
+    data = data.copy()
+    if "date" in data.columns:
+        data.set_index("date", inplace=True)
+    data["day"] = pd.DatetimeIndex(data.index).date
+    data["isFirstBar"] = data["day"].diff() >= "1 days"
+    price = data[price_for_ma]
+    volume = data.volume
+    high = data.high
+    low = data.low
+    ma1 = vwap(price, volume, ma_length1)
+    ma2 = vwap(price, volume, ma_length2)
+    ma_mid = (ma1 + ma2) / 2
+    ma_bandwidth = ma1 - ma2
+    longTarget = (target_pct / 100 + 1) * ma_mid
+    shortTarget = ma_mid / (target_pct / 100 + 1)
+    longExit = high > longTarget
+    shortExit = low < shortTarget
+
+    # Ichimoku
+    ma_max = pd.concat([ma1, ma2], axis=1).max(axis=1).bfill()
+    conversionLine = (
+        low.rolling(ichimoku_conversionLine_length).min()
+        + high.rolling(ichimoku_conversionLine_length).max()
+    ) / 2
+
+    baseLine = (
+        low.rolling(ichimoku_baseLine_length).min()
+        + high.rolling(ichimoku_baseLine_length).max()
+    ) / 2
+    leadline1 = (conversionLine + baseLine) / 2
+    leadline2 = (
+        low.rolling(int(2 * ichimoku_baseLine_length)).min()
+        + high.rolling(int(2 * ichimoku_baseLine_length)).max()
+    ) / 2
+    close_under_ichimoku = data.close.lt(
+        pd.concat([leadline1, leadline2], axis=1)
+        .min(axis=1)
+        .shift(ichimoku_baseLine_length - 1)
+    )
+    trend_up = ma1.gt(ma2)
+    trend_down = ma1.lt(ma2)
+    # rsi = pt.rsi(data.open, 10)
+    rsi = pt.rsi(data.ta.hlc3(), 10)
+    strong_trend = rsi.gt(20) & rsi.lt(80)
+    newday_trendup_continuation = (
+        data["isFirstBar"].fillna(False)
+        & strong_trend
+        & (trend_up.fillna(False) & ~longExit)
+        & ma_bandwidth.pct_change().gt(0)
+    )
+    shortCondition = (
+        (close_under_ichimoku & ~close_under_ichimoku.shift().fillna(False))
+        & trend_down.fillna(False)
+    ) | (
+        close_under_ichimoku.fillna(False)
+        & trend_down.fillna(False)
+        & data["isFirstBar"].fillna(False)
+        # & ~shortExit
+    )
+    momentum_condition1 = (rsi.gt(rsi.shift())).fillna(False)
+    # momentum_condition2 = (close - op).gt(0)
+    momentum_condition = momentum_condition1
+    longCondition = (
+        (trend_up & ~trend_up.shift().fillna(False)) & momentum_condition
+    ) | newday_trendup_continuation
+    long = longCondition
+    longX = longExit
+    # short = longExit | shortCondition
+    short = shortCondition
+    shortX = shortExit | long
+    # long = trend_up & ~trend_up.shift().fillna(False)
+    # longX = longExit
+    # short = longExit
+    # shortX = shortExit | long
+    signal = pd.DataFrame(
+        columns=["Long", "LongX", "Short", "ShortX"], index=data.index
+    )
+    signal["Long"] = long
+    signal["LongX"] = longX & ~longX.shift().fillna(False)
+    signal["Short"] = short
+    signal["ShortX"] = shortX & ~shortX.shift().fillna(False)
+    signal["longTarget"] = longTarget
+    signal["shortTarget"] = shortTarget
+    signal["maMID"] = ma_mid
+    signal["RSI"] = rsi
     signal["EOD"] = pd.DatetimeIndex(signal.index).time == datetime.time(12, 50)
     if shift:
         return signal.shift()
@@ -148,9 +260,9 @@ def ma_double_cloud_signal(
     data,
     ma_length1=11,
     ma_length2=23,
-    ma_length3=41,
-    ma_length4=64,
-    target_pct=0.7,
+    ma_length3=70,
+    ma_length4=70,
+    target_pct=0.69,
     price_for_ma="open",
     shift=False,
 ):
@@ -169,36 +281,61 @@ def ma_double_cloud_signal(
     # ma4 = dsma(price, ma_length4)
     ma4 = pt.sma(price, ma_length4)
     ma_mid = (ma1 + ma2) / 2
+    ma_bandwidth = ma1 - ma2
     longTarget = (target_pct / 100 + 1) * ma_mid
     shortTarget = ma_mid / (target_pct / 100 + 1)
     longExit = high > longTarget
     shortExit = low < shortTarget
-    trend_up = ma1.gt(ma2) & ma3.gt(ma4)
-    rsi = pt.rsi(data.close, 10)
-    strong_trend = rsi.gt(40) & rsi.lt(80)
+    # trend_up = ma1.gt(ma2) & ma3.gt(ma4)
+    # trend_dn = ma1.lt(ma2) & ma3.lt(ma4)
+    trend_up = ma1.gt(ma2)
+    trend_dn = ma1.lt(ma2)
+    rsi = pt.rsi(data.ta.hlc3(), 10)
+    strong_trend = rsi.gt(20) & rsi.lt(80)
+
+    momentum_condition1 = (rsi.gt(rsi.shift())).fillna(False)
+    momentum_condition = momentum_condition1
+
     newday_trendup_continuation = (
         data["isFirstBar"].fillna(False)
         & strong_trend
-        & (trend_up.fillna(False) & ~longExit)
+        & (trend_up.fillna(False) & ~longExit & ma3.gt(ma4))
+        & ma_bandwidth.pct_change().gt(0)
+        & momentum_condition
     )
-    long = (trend_up & ~trend_up.shift().fillna(False)) | newday_trendup_continuation
+    newday_trenddn_continuation = (
+        data["isFirstBar"].fillna(False)
+        & strong_trend
+        & (trend_dn.fillna(False) & ~shortExit & ma3.lt(ma4))
+        & ma_bandwidth.pct_change().lt(0)
+        & ~momentum_condition
+    )
+
+    longCondition = (
+        (trend_up & ~trend_up.shift().fillna(False)) & momentum_condition & ma3.gt(ma4)
+    ) | newday_trendup_continuation
+
+    shortCondition = (
+        (trend_dn & ~trend_dn.shift().fillna(False)) & ~momentum_condition & ma3.lt(ma4)
+    ) | newday_trenddn_continuation
+    long = longCondition
     longX = longExit
-    short = longExit
+
+    # short = longExit
+    short = shortCondition
     shortX = shortExit | long
     signal = pd.DataFrame(
         columns=["Long", "LongX", "Short", "ShortX"], index=data.index
     )
-    signal["isFirstBar"] = data["isFirstBar"]
-    signal["TrendUp"] = trend_up
     signal["Long"] = long
-    signal["LongX"] = longX
+    signal["LongX"] = longX & ~longX.shift().fillna(False)
     signal["Short"] = short
-    signal["ShortX"] = shortX
+    signal["ShortX"] = shortX & ~shortX.shift().fillna(False)
     signal["longTarget"] = longTarget
     signal["shortTarget"] = shortTarget
     signal["maMID"] = ma_mid
     signal["RSI"] = rsi
-    signal["EOD"] = pd.DatetimeIndex(signal.index).time == datetime.time(12, 50)
+    signal["EOD"] = pd.DatetimeIndex(signal.index).time == datetime.time(12, 30)
     if shift:
         return signal.shift()
     else:
@@ -292,7 +429,6 @@ def MTFVWAP(
     data["isFirstBar"] = data["day"].diff() >= "1 days"
 
     def calc_vwap(df, tf):
-
         if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
             return (df.ta.hlc3() * df.Volume).groupby(
                 df.index.floor(tf)
@@ -318,12 +454,8 @@ def MTFVWAP(
     )
 
     if price_move_tp is not None:
-        price_position = price_position_by_pivots(
-            data, pivot_data_shift=pivot_shift
-        )
-        pexp = price_position.groupby(
-            price_position.index.to_period("D")
-        ).expanding()
+        price_position = price_position_by_pivots(data, pivot_data_shift=pivot_shift)
+        pexp = price_position.groupby(price_position.index.to_period("D")).expanding()
         price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
         price_move = price_move.droplevel(0)
 
@@ -358,14 +490,12 @@ def MTFVWAP(
     short = in_session & shortCondition & (not long_only)
 
     longX = (
-        price_move.eq(price_move_tp)
-        & price_move.shift().ne(price_move_tp)
+        price_move.eq(price_move_tp) & price_move.shift().ne(price_move_tp)
         if price_move_tp is not None
         else pd.Series([False] * len(data), index=data.index)
     )
     shortX = (
-        price_move.eq(-price_move_tp)
-        & price_move.shift().ne(-price_move_tp)
+        price_move.eq(-price_move_tp) & price_move.shift().ne(-price_move_tp)
         if price_move_tp is not None
         else pd.Series([False] * len(data), index=data.index)
     )
@@ -383,7 +513,6 @@ def MTFVWAP(
         return signal.shift()
     else:
         return signal
-
 
 
 def EhlersRoofing(close, fast_length, slow_length):
@@ -612,7 +741,7 @@ def get_atr(high, low, close, period, MAtype="Ehlers", convert_series=False):
 
 class TALib:
     def __init__(self, **kwargs) -> None:
-        data = kwargs.get("data", None)
+        self.data = kwargs.get("data", None)
 
     def didiIndex(
         self,
@@ -623,7 +752,7 @@ class TALib:
         ssf_length=15,
     ):
         if data is None:
-            data = data.copy()
+            data = self.data.copy()
         else:
             data = data.copy()
         hlc3 = data.ta.hlc3().ffill()
@@ -638,7 +767,7 @@ class TALib:
 
     def VFI(self, data=None, length=130, maxVolumeCutOff=2.5):
         if data is None:
-            data = data.copy()
+            data = self.data.copy()
         else:
             data = data.copy()
         hlc3 = data.ta.hlc3().ffill()
@@ -669,7 +798,7 @@ class TALib:
         with_volume=1,
     ):
         if data is None:
-            data = data.copy()
+            data = self.data.copy()
         else:
             data = data.copy()
         close = data.close
@@ -774,7 +903,7 @@ class TALib:
         **bp_kwargs,
     ):
         if data is None:
-            data = data.copy()
+            data = self.data.copy()
         else:
             data = data.copy()
         original_data = data.copy()
@@ -800,8 +929,8 @@ class TALib:
             bp_kwargs.get("normalization_period", 200)
         ).apply(rolling_rms)
 
-        bp = buyingpressure(data, **bp_kwargs)
-        original_bp = buyingpressure(original_data, **bp_kwargs)
+        bp = self.buyingpressure(data, **bp_kwargs)
+        original_bp = self.buyingpressure(original_data, **bp_kwargs)
 
         demands = data.shift(2).low[
             bp.shift(2).gt(significant_threshold)
