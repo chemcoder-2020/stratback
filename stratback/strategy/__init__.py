@@ -1,6 +1,6 @@
 from .doubleCloudMAStrategy import DoubleCloudMAStrategy
 from .doubleCloudMAStrategyV1 import DoubleCloudMAStrategyV1
-from .doubleCloudMAStrategyVWAP import DoubleCloudMAStrategyVWAP
+from .MTFVWAPStrategy import MTFVWAPStrategy
 from .singleCloudMAStrategy import SingleCloudMAStrategy
 from .singleCloudMAStrategyV2 import SingleCloudMAStrategyV2
 from .singleCloudMAStrategyV3 import SingleCloudMAStrategyV3

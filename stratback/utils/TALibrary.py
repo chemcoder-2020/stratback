@@ -4,6 +4,7 @@ import numpy as np
 import vectorbt as vbt
 import datetime
 from scipy.stats import linregress
+import re
 
 pd.options.display.max_rows = 999
 
@@ -262,11 +263,127 @@ def price_position_by_pivots(data, secondary_tf="D", pivot_data_shift=78):
     p_4 = data.close.between(vS4, vS3)
     p_5 = data.close.between(vS5, vS4)
     p_6 = data.close.between(-np.inf, vS5)
-    
+
     price_position = pd.concat(
         [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
     ).apply(np.argmax, axis=1)
     return price_position
+
+
+def MTFVWAP(
+    data,
+    HTF1="D",
+    HTF2="W",
+    HTF3="M",
+    use_rsi=False,
+    use_avwap_cross=True,
+    pivot_shift=78,
+    price_move_tp=None,
+    long_only=False,
+    short_only=False,
+    shift=False,
+    daytrade=True,
+):
+    data = data.copy()
+
+    if "date" in data.columns:
+        data.set_index("date", inplace=True)
+    data["day"] = pd.DatetimeIndex(data.index).date
+    data["isFirstBar"] = data["day"].diff() >= "1 days"
+
+    def calc_vwap(df, tf):
+
+        if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
+            return (df.ta.hlc3() * df.Volume).groupby(
+                df.index.floor(tf)
+            ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
+        else:
+            return df.ta.vwap(anchor=tf)
+
+    rsi = pt.rsi(data.ta.hlc3(), 10)
+    rsi_up = rsi.gt(rsi.shift())
+    use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
+
+    avwap_htf1 = calc_vwap(data, HTF1)
+    avwap_htf2 = calc_vwap(data, HTF2)
+    avwap_htf3 = calc_vwap(data, HTF3)
+
+    avwap_uptrend = avwap_htf1.gt(avwap_htf2) & avwap_htf2.gt(avwap_htf3)
+    avwap_dntrend = avwap_htf1.lt(avwap_htf2) & avwap_htf2.lt(avwap_htf3)
+    avwap_crossover = avwap_htf1.gt(avwap_htf2) & avwap_htf1.shift().lt(
+        avwap_htf2.shift()
+    )
+    avwap_crossunder = avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().gt(
+        avwap_htf2.shift()
+    )
+
+    if price_move_tp is not None:
+        price_position = price_position_by_pivots(
+            data, pivot_data_shift=pivot_shift
+        )
+        pexp = price_position.groupby(
+            price_position.index.to_period("D")
+        ).expanding()
+        price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
+        price_move = price_move.droplevel(0)
+
+    buy_call_open = data["isFirstBar"].fillna(False) & avwap_uptrend
+    buy_put_open = data["isFirstBar"].fillna(False) & avwap_dntrend
+
+    longCondition = (
+        buy_call_open | avwap_crossover if use_avwap_cross else buy_call_open
+    ) & use_rsi_cond[use_rsi][0]
+
+    shortCondition = (
+        buy_put_open | avwap_crossunder if use_avwap_cross else buy_put_open
+    ) & use_rsi_cond[use_rsi][1]
+
+    if daytrade:
+        in_session = pd.Series(
+            np.logical_and(
+                pd.DatetimeIndex(data.index).time < datetime.time(12, 25),
+                pd.DatetimeIndex(data.index).time >= datetime.time(6, 30),
+            ),
+            index=data.index,
+        )
+    else:
+        in_session = (
+            pd.Series(
+                [True] * len(data),
+                index=data.index,
+            ),
+        )
+
+    long = in_session & longCondition & (not short_only)
+    short = in_session & shortCondition & (not long_only)
+
+    longX = (
+        price_move.eq(price_move_tp)
+        & price_move.shift().ne(price_move_tp)
+        if price_move_tp is not None
+        else pd.Series([False] * len(data), index=data.index)
+    )
+    shortX = (
+        price_move.eq(-price_move_tp)
+        & price_move.shift().ne(-price_move_tp)
+        if price_move_tp is not None
+        else pd.Series([False] * len(data), index=data.index)
+    )
+    signal = pd.DataFrame(
+        columns=["Long", "LongX", "Short", "ShortX"], index=data.index
+    )
+    signal["isFirstBar"] = data["isFirstBar"]
+    signal["Long"] = long
+    signal["LongX"] = longX
+    signal["Short"] = short
+    signal["ShortX"] = shortX
+    signal["RSI"] = rsi
+    signal["EOD"] = pd.DatetimeIndex(signal.index).time >= datetime.time(12, 25)
+    if shift:
+        return signal.shift()
+    else:
+        return signal
+
 
 
 def EhlersRoofing(close, fast_length, slow_length):
@@ -495,7 +612,7 @@ def get_atr(high, low, close, period, MAtype="Ehlers", convert_series=False):
 
 class TALib:
     def __init__(self, **kwargs) -> None:
-        self.data = kwargs.get("data", None)
+        data = kwargs.get("data", None)
 
     def didiIndex(
         self,
@@ -506,7 +623,7 @@ class TALib:
         ssf_length=15,
     ):
         if data is None:
-            data = self.data.copy()
+            data = data.copy()
         else:
             data = data.copy()
         hlc3 = data.ta.hlc3().ffill()
@@ -521,7 +638,7 @@ class TALib:
 
     def VFI(self, data=None, length=130, maxVolumeCutOff=2.5):
         if data is None:
-            data = self.data.copy()
+            data = data.copy()
         else:
             data = data.copy()
         hlc3 = data.ta.hlc3().ffill()
@@ -552,7 +669,7 @@ class TALib:
         with_volume=1,
     ):
         if data is None:
-            data = self.data.copy()
+            data = data.copy()
         else:
             data = data.copy()
         close = data.close
@@ -657,7 +774,7 @@ class TALib:
         **bp_kwargs,
     ):
         if data is None:
-            data = self.data.copy()
+            data = data.copy()
         else:
             data = data.copy()
         original_data = data.copy()
@@ -683,8 +800,8 @@ class TALib:
             bp_kwargs.get("normalization_period", 200)
         ).apply(rolling_rms)
 
-        bp = self.buyingpressure(data, **bp_kwargs)
-        original_bp = self.buyingpressure(original_data, **bp_kwargs)
+        bp = buyingpressure(data, **bp_kwargs)
+        original_bp = buyingpressure(original_data, **bp_kwargs)
 
         demands = data.shift(2).low[
             bp.shift(2).gt(significant_threshold)

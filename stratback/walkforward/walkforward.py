@@ -653,6 +653,10 @@ def objective_generator(
                 optimization_dict[k] = trial.suggest_float(
                     k, low=v[0], high=v[1], step=v[2]
                 )
+            elif v[-1] == "categorical":
+                optimization_dict[k] = trial.suggest_categorical(
+                    k, v[0]
+                )
 
         backtest_params = strategy_kwargs.copy()
         backtest_params.update(optimization_dict)
