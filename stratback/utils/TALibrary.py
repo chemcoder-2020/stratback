@@ -412,6 +412,7 @@ def MTFVWAP(
     HTF1="D",
     HTF2="W",
     HTF3="M",
+    use_three_TF=False,
     use_rsi=False,
     use_avwap_cross=True,
     pivot_shift=78,
@@ -444,8 +445,13 @@ def MTFVWAP(
     avwap_htf2 = calc_vwap(data, HTF2)
     avwap_htf3 = calc_vwap(data, HTF3)
 
-    avwap_uptrend = avwap_htf1.gt(avwap_htf2) & avwap_htf2.gt(avwap_htf3)
-    avwap_dntrend = avwap_htf1.lt(avwap_htf2) & avwap_htf2.lt(avwap_htf3)
+    if use_three_TF:
+        avwap_htf3 = calc_vwap(data, HTF3)
+        avwap_uptrend = avwap_htf1.gt(avwap_htf2) & avwap_htf2.gt(avwap_htf3)
+        avwap_dntrend = avwap_htf1.lt(avwap_htf2) & avwap_htf2.lt(avwap_htf3)
+    else:
+        avwap_uptrend = avwap_htf1.gt(avwap_htf2)
+        avwap_dntrend = avwap_htf1.lt(avwap_htf2)
     avwap_crossover = avwap_htf1.gt(avwap_htf2) & avwap_htf1.shift().lt(
         avwap_htf2.shift()
     )

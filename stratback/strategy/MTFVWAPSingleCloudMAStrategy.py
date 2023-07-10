@@ -8,11 +8,13 @@ import datetime
 import re
 
 
-class MTFVWAPStrategy(Strategy):
+class MTFVWAPSingleCloudMAStrategy(Strategy):
+    n1 = 15
+    n2 = 24
+
     HTF1 = "D"
     HTF2 = "W"
     HTF3 = "M"
-    use_three_TF = False
     size = None
     long_only = True
     short_only = False
@@ -20,8 +22,6 @@ class MTFVWAPStrategy(Strategy):
     pl_pct_tp = None
     limit_pct = None
     stop_pct = None
-    use_rsi = False
-    use_avwap_cross = True
     pivot_shift = 78
     price_move_tp = None
 
@@ -47,24 +47,17 @@ class MTFVWAPStrategy(Strategy):
                 return df.ta.vwap(anchor=tf)
 
         rsi = pt.rsi(data.ta.hlc3(), 10)
-        rsi_up = rsi.gt(rsi.shift())
-        use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
 
         avwap_htf1 = calc_vwap(data, self.HTF1)
         avwap_htf2 = calc_vwap(data, self.HTF2)
-        if self.use_three_TF:
-            avwap_htf3 = calc_vwap(data, self.HTF3)
-            avwap_uptrend = avwap_htf1.gt(avwap_htf2) & avwap_htf2.gt(avwap_htf3)
-            avwap_dntrend = avwap_htf1.lt(avwap_htf2) & avwap_htf2.lt(avwap_htf3)
-        else:
-            avwap_uptrend = avwap_htf1.gt(avwap_htf2)
-            avwap_dntrend = avwap_htf1.lt(avwap_htf2)
-        avwap_crossover = (
-            (avwap_htf1.gt(avwap_htf2) & avwap_htf1.shift().lt(avwap_htf2.shift()))
-        )
-        avwap_crossunder = (
-            (avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().gt(avwap_htf2.shift()))
-        )
+        avwap_htf3 = calc_vwap(data, self.HTF3)
+        ma1 = vwap(data.ta.hlc3(), data.Volume, self.n1)
+        ma2 = vwap(data.ta.hlc3(), data.Volume, self.n2)
+        ma_up = ma1.gt(ma2)
+        ma_dn = ma1.lt(ma2)
+
+        avwap_uptrend = avwap_htf1.gt(avwap_htf2) & avwap_htf2.gt(avwap_htf3)
+        avwap_dntrend = avwap_htf1.lt(avwap_htf2) & avwap_htf2.lt(avwap_htf3)
 
         if self.price_move_tp is not None:
             price_position = price_position_by_pivots(
@@ -79,13 +72,12 @@ class MTFVWAPStrategy(Strategy):
         buy_call_open = data["isFirstBar"].fillna(False) & avwap_uptrend
         buy_put_open = data["isFirstBar"].fillna(False) & avwap_dntrend
 
-        longCondition = (
-            buy_call_open | avwap_crossover if self.use_avwap_cross else buy_call_open
-        ) & use_rsi_cond[self.use_rsi][0]
+        intraday_call_open = avwap_uptrend & (ma_up & ~ma_up.shift().fillna(False))
+        intraday_put_open = avwap_dntrend & (ma_dn & ~ma_dn.shift().fillna(False))
 
-        shortCondition = (
-            buy_put_open | avwap_crossunder if self.use_avwap_cross else buy_put_open
-        ) & use_rsi_cond[self.use_rsi][1]
+        longCondition = buy_call_open | intraday_call_open
+
+        shortCondition = buy_put_open | intraday_put_open
 
         if self.daytrade:
             in_session = pd.Series(
