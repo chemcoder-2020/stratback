@@ -258,15 +258,21 @@ def linreg_signal(data, lookback, shift=False):
 
 def ma_double_cloud_signal(
     data,
-    ma_length1=11,
-    ma_length2=23,
+    ma_length1=18,
+    ma_length2=47,
     ma_length3=70,
-    ma_length4=70,
-    target_pct=0.69,
+    target_pct=0.665,
     price_for_ma="open",
     shift=False,
+    long_only=True,
+    short_only=False,
+    assume_downtrend_follows_uptrend=False,
+    with_longX=False,
+    with_shortX=False,
+    daytrade=True,
 ):
     data = data.copy()
+
     if "date" in data.columns:
         data.set_index("date", inplace=True)
     data["day"] = pd.DatetimeIndex(data.index).date
@@ -278,16 +284,21 @@ def ma_double_cloud_signal(
     ma1 = vwap(price, volume, ma_length1)
     ma2 = vwap(price, volume, ma_length2)
     ma3 = vwap(price, volume, ma_length3)
-    # ma4 = dsma(price, ma_length4)
-    ma4 = pt.sma(price, ma_length4)
+    ma4 = pt.sma(price, ma_length3)
+
     ma_mid = (ma1 + ma2) / 2
     ma_bandwidth = ma1 - ma2
     longTarget = (target_pct / 100 + 1) * ma_mid
     shortTarget = ma_mid / (target_pct / 100 + 1)
-    longExit = high > longTarget
-    shortExit = low < shortTarget
-    # trend_up = ma1.gt(ma2) & ma3.gt(ma4)
-    # trend_dn = ma1.lt(ma2) & ma3.lt(ma4)
+    if with_longX:
+        longExit = high > longTarget
+    else:
+        longExit = pd.Series([False] * len(data), index=data.index)
+
+    if with_shortX:
+        shortExit = low < shortTarget
+    else:
+        shortExit = pd.Series([False] * len(data), index=data.index)
     trend_up = ma1.gt(ma2)
     trend_dn = ma1.lt(ma2)
     rsi = pt.rsi(data.ta.hlc3(), 10)
@@ -295,7 +306,6 @@ def ma_double_cloud_signal(
 
     momentum_condition1 = (rsi.gt(rsi.shift())).fillna(False)
     momentum_condition = momentum_condition1
-
     newday_trendup_continuation = (
         data["isFirstBar"].fillna(False)
         & strong_trend
@@ -318,12 +328,33 @@ def ma_double_cloud_signal(
     shortCondition = (
         (trend_dn & ~trend_dn.shift().fillna(False)) & ~momentum_condition & ma3.lt(ma4)
     ) | newday_trenddn_continuation
-    long = longCondition
-    longX = longExit
 
-    # short = longExit
-    short = shortCondition
-    shortX = shortExit | long
+    if daytrade:
+        in_session = pd.Series(
+            np.logical_and(
+                pd.DatetimeIndex(data.index).time < datetime.time(12, 25),
+                pd.DatetimeIndex(data.index).time >= datetime.time(6, 30),
+            ),
+            index=data.index,
+        )
+    else:
+        in_session = (
+            pd.Series(
+                [True] * len(data),
+                index=data.index,
+            ),
+        )
+
+    long = in_session & longCondition & (not short_only)
+
+    if assume_downtrend_follows_uptrend:
+        short = in_session & (longExit & (not long_only))
+    else:
+        short = in_session & shortCondition & (not long_only)
+
+    longX = longExit
+    shortX = shortExit
+
     signal = pd.DataFrame(
         columns=["Long", "LongX", "Short", "ShortX"], index=data.index
     )
@@ -335,7 +366,9 @@ def ma_double_cloud_signal(
     signal["shortTarget"] = shortTarget
     signal["maMID"] = ma_mid
     signal["RSI"] = rsi
-    signal["EOD"] = pd.DatetimeIndex(signal.index).time == datetime.time(12, 30)
+    signal["EOD"] = (pd.DatetimeIndex(signal.index).time >= datetime.time(12, 25)) & (
+        pd.DatetimeIndex(signal.index).time <= datetime.time(12, 55)
+    )
     if shift:
         return signal.shift()
     else:
@@ -514,7 +547,9 @@ def MTFVWAP(
     signal["Short"] = short
     signal["ShortX"] = shortX
     signal["RSI"] = rsi
-    signal["EOD"] = pd.DatetimeIndex(signal.index).time >= datetime.time(12, 25)
+    signal["EOD"] = (pd.DatetimeIndex(signal.index).time >= datetime.time(12, 25)) & (
+        pd.DatetimeIndex(signal.index).time <= datetime.time(12, 55)
+    )
     if shift:
         return signal.shift()
     else:

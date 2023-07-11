@@ -59,11 +59,11 @@ class MTFVWAPStrategy(Strategy):
         else:
             avwap_uptrend = avwap_htf1.gt(avwap_htf2)
             avwap_dntrend = avwap_htf1.lt(avwap_htf2)
-        avwap_crossover = (
-            (avwap_htf1.gt(avwap_htf2) & avwap_htf1.shift().lt(avwap_htf2.shift()))
+        avwap_crossover = avwap_htf1.gt(avwap_htf2) & avwap_htf1.shift().lt(
+            avwap_htf2.shift()
         )
-        avwap_crossunder = (
-            (avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().gt(avwap_htf2.shift()))
+        avwap_crossunder = avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().gt(
+            avwap_htf2.shift()
         )
 
         if self.price_move_tp is not None:
@@ -145,6 +145,7 @@ class MTFVWAPStrategy(Strategy):
             self.data.df,
             long_only=self.long_only,
             short_only=self.short_only,
+            plot=False,
         )
         self.in_session = self.I(
             lambda x: x,
@@ -155,12 +156,24 @@ class MTFVWAPStrategy(Strategy):
                 ),
                 index=self.data.df.index,
             ),
+            plot=False,
         )
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
-        self.bars = np.unique(self.data.df.index.strftime("%H:%M:%S"))
-        self.close = self.I(lambda x: x, self.data.Close)
-        self.high = self.I(lambda x: x, self.data.High)
-        self.low = self.I(lambda x: x, self.data.Low)
+        self.bars = np.unique(self.data.df.index.strftime("%H:%M"))
+        self.close = self.I(lambda x: x, self.data.Close, plot=False)
+
+        def calc_vwap(df, tf):
+            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
+                return (df.ta.hlc3() * df.Volume).groupby(
+                    df.index.floor(tf)
+                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
+            else:
+                return df.ta.vwap(anchor=tf)
+
+        self.vwap_htf1 = self.I(calc_vwap, self.data.df, self.HTF1, overlay=True)
+        self.vwap_htf2 = self.I(calc_vwap, self.data.df, self.HTF2, overlay=True)
+        if self.use_three_TF:
+            self.vwap_htf3 = self.I(calc_vwap, self.data.df, self.HTF3, overlay=True)
 
     def next(self):
         if self.eod:
