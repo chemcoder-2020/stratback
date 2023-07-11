@@ -165,6 +165,7 @@ class SingleCloudMAStrategy(Strategy):
             price_for_ma=self.price_for_ma,
             with_longX=self.with_longX,
             with_shortX=self.with_shortX,
+            plot=False
         )
         if self.daytrade:
             self.in_session = self.I(
@@ -178,6 +179,7 @@ class SingleCloudMAStrategy(Strategy):
                     ),
                     index=self.data.df.index,
                 ),
+                plot=False
             )
         else:
             self.in_session = self.I(
@@ -186,6 +188,7 @@ class SingleCloudMAStrategy(Strategy):
                     [True] * len(self.data.df),
                     index=self.data.df.index,
                 ),
+                plot=False
             )
             self.eod = self.I(
                 lambda x: x,
@@ -193,11 +196,12 @@ class SingleCloudMAStrategy(Strategy):
                     [False] * len(self.data.df),
                     index=self.data.df.index,
                 ),
+                plot=False
             )
 
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M:%S"))
-        self.close = self.I(lambda x: x, self.data.Close)
+        self.close = self.I(lambda x: x, self.data.Close, plot=False)
 
     def next(self):
         if self.eod:

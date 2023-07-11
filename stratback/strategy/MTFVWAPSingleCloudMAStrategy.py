@@ -137,6 +137,7 @@ class MTFVWAPSingleCloudMAStrategy(Strategy):
             self.data.df,
             long_only=self.long_only,
             short_only=self.short_only,
+            plot=False
         )
         self.in_session = self.I(
             lambda x: x,
@@ -147,12 +148,13 @@ class MTFVWAPSingleCloudMAStrategy(Strategy):
                 ),
                 index=self.data.df.index,
             ),
+            plot=False
         )
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M:%S"))
-        self.close = self.I(lambda x: x, self.data.Close)
-        self.high = self.I(lambda x: x, self.data.High)
-        self.low = self.I(lambda x: x, self.data.Low)
+        self.close = self.I(lambda x: x, self.data.Close, plot=False)
+        self.high = self.I(lambda x: x, self.data.High, plot=False)
+        self.low = self.I(lambda x: x, self.data.Low, plot=False)
 
     def next(self):
         if self.eod:

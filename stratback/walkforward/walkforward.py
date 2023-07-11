@@ -57,7 +57,7 @@ class WalkforwardOptimization:
             ),
         )
 
-    def backtest(data, strategy, plot_bt=False, **kwargs):
+    def backtest(data, strategy, plot_bt=False, commission=0.000, cash=30000, **kwargs):
         data = data.copy()
         data.columns = data.columns.str.capitalize()
         try:
@@ -68,8 +68,8 @@ class WalkforwardOptimization:
         bt = Backtest(
             data,
             strategy,
-            cash=30000,
-            commission=0.000,
+            cash=cash,
+            commission=commission,
             exclusive_orders=kwargs.get("exclusive_orders", True),
         )
         output = bt.run(**kwargs)

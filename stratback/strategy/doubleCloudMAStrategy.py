@@ -158,6 +158,7 @@ class DoubleCloudMAStrategy(Strategy):
             assume_downtrend_follows_uptrend=self.assume_downtrend_follows_uptrend,
             with_longX=self.with_longX,
             with_shortX=self.with_shortX,
+            plot=False
         )
         self.in_session = self.I(
             lambda x: x,
@@ -168,12 +169,13 @@ class DoubleCloudMAStrategy(Strategy):
                 ),
                 index=self.data.df.index,
             ),
+            plot=False
         )
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M:%S"))
-        self.close = self.I(lambda x: x, self.data.Close)
-        self.high = self.I(lambda x: x, self.data.High)
-        self.low = self.I(lambda x: x, self.data.Low)
+        self.close = self.I(lambda x: x, self.data.Close,plot=False)
+        self.high = self.I(lambda x: x, self.data.High,plot=False)
+        self.low = self.I(lambda x: x, self.data.Low,plot=False)
 
     def next(self):
         if self.eod:
