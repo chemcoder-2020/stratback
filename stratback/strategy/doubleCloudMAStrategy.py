@@ -77,15 +77,15 @@ class DoubleCloudMAStrategy(Strategy):
         newday_trendup_continuation = (
             data["isFirstBar"].fillna(False)
             & strong_trend
-            & (trend_up.fillna(False) & ~longExit & ma3.gt(ma4))
+            & (trend_up.fillna(False) & trend_up.shift().fillna(False) & ~longExit & ma3.gt(ma4))
             & ma_bandwidth.pct_change().gt(0)
             & momentum_condition
         )
         newday_trenddn_continuation = (
             data["isFirstBar"].fillna(False)
             & strong_trend
-            & (trend_dn.fillna(False) & ~shortExit & ma3.lt(ma4))
-            & ma_bandwidth.pct_change().lt(0)
+            & (trend_dn.fillna(False) & trend_dn.shift().fillna(False) & ~shortExit & ma3.lt(ma4))
+            & ma_bandwidth.pct_change().gt(0)
             & ~momentum_condition
         )
 

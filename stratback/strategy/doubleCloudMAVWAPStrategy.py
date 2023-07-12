@@ -7,55 +7,69 @@ from stratback.utils.TALibrary import (
     vwap,
 )
 import datetime
+import re
 
 
-class SingleCloudMAStrategy(Strategy):
+class DoubleCloudMAVWAPStrategy(Strategy):
     n1 = 11
     n2 = 23
+    n3 = 70
     size = 1
     target_pct = 0.7
+    HTF1 = "D"
+    HTF2 = "M"
     long_only = True
     short_only = False
-    assume_downtrend_follows_uptrend = True
+    assume_downtrend_follows_uptrend = False
     daytrade = True
-    price_for_ma = "Open"
-    with_longX = True
-    with_shortX = True
+    with_longX = False
+    with_shortX = False
     pl_pct_tp = None
     limit_pct = None
     stop_pct = None
 
-    def ma_single_cloud_signal(
+    def ma_double_cloud_signal(
         self,
         data,
         target_pct=0.7,
         price_for_ma="Open",
-        long_only=False,
-        assume_downtrend_follows_uptrend=True,
-        with_longX=True,
-        with_shortX=True,
+        long_only=True,
+        short_only=False,
+        assume_downtrend_follows_uptrend=False,
+        with_longX=False,
+        with_shortX=False,
     ):
         data = data.copy()
         ma_length1 = self.n1
         ma_length2 = self.n2
+        ma_length3 = self.n3
 
         if "date" in data.columns:
             data.set_index("date", inplace=True)
         data["day"] = pd.DatetimeIndex(data.index).date
         data["isFirstBar"] = data["day"].diff() >= "1 days"
-        data["Hlc3"] = data.ta.hlc3()
-        data["Ohlc4"] = data.ta.ohlc4()
+        def calc_vwap(df, tf):
+            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
+                return (df.ta.hlc3() * df.Volume).groupby(
+                    df.index.floor(tf)
+                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
+            else:
+                return df.ta.vwap(anchor=tf)
+        avwap_htf1 = calc_vwap(data, self.HTF1)
+        avwap_htf2 = calc_vwap(data, self.HTF2)
+        avwap_up = avwap_htf1.gt(avwap_htf2)
+        avwap_dn = avwap_htf1.lt(avwap_htf2)
         price = data[price_for_ma]
         volume = data.Volume
         high = data.High
         low = data.Low
-        # linreg_high = pt.linreg(high, 200)
-        # linreg_low = pt.linreg(low, 200)
         ma1 = vwap(price, volume, ma_length1)
         ma2 = vwap(price, volume, ma_length2)
-        ma_bandwidth = ma1 - ma2
+        ma3 = vwap(price, volume, ma_length3)
+        ma4 = pt.sma(price, ma_length3)
 
         ma_mid = (ma1 + ma2) / 2
+        ma_bandwidth = ma1 - ma2
         longTarget = (target_pct / 100 + 1) * ma_mid
         shortTarget = ma_mid / (target_pct / 100 + 1)
         if with_longX:
@@ -69,34 +83,37 @@ class SingleCloudMAStrategy(Strategy):
             shortExit = pd.Series([False] * len(data), index=data.index)
         trend_up = ma1.gt(ma2)
         trend_dn = ma1.lt(ma2)
-        # rsi = pt.rsi(data[price_for_ma], 10)
-        rsi = pt.rsi(data["Hlc3"], 10)
-        # rsi = pt.sma(pt.rsi(data["Hlc3"], 10),14)
+        rsi = pt.rsi(data.ta.hlc3(), 10)
         strong_trend = rsi.gt(20) & rsi.lt(80)
+
         momentum_condition1 = (rsi.gt(rsi.shift())).fillna(False)
         momentum_condition = momentum_condition1
         newday_trendup_continuation = (
             data["isFirstBar"].fillna(False)
             & strong_trend
-            & (trend_up.fillna(False) & trend_up.shift().fillna(False) & ~longExit)
+            & (trend_up.fillna(False) & trend_up.shift().fillna(False) & ~longExit & ma3.gt(ma4))
             & ma_bandwidth.pct_change().gt(0)
             & momentum_condition
         )
         newday_trenddn_continuation = (
             data["isFirstBar"].fillna(False)
             & strong_trend
-            & (trend_dn.fillna(False) & trend_dn.shift().fillna(False) & ~shortExit)
+            & (trend_dn.fillna(False) & trend_dn.shift().fillna(False) & ~shortExit & ma3.lt(ma4))
             & ma_bandwidth.pct_change().gt(0)
             & ~momentum_condition
         )
 
-        longCondition = (
-            (trend_up & ~trend_up.shift().fillna(False)) & momentum_condition
-        ) | newday_trendup_continuation
+        longCondition = ((
+            (trend_up & ~trend_up.shift().fillna(False))
+            & momentum_condition
+            & ma3.gt(ma4)
+        ) | newday_trendup_continuation) & avwap_up
 
-        shortCondition = (
-            (trend_dn & ~trend_dn.shift().fillna(False)) & ~momentum_condition
-        ) | newday_trenddn_continuation
+        shortCondition = ((
+            (trend_dn & ~trend_dn.shift().fillna(False))
+            & ~momentum_condition
+            & ma3.lt(ma4)
+        ) | newday_trenddn_continuation) & avwap_dn
 
         if self.daytrade:
             in_session = pd.Series(
@@ -107,26 +124,23 @@ class SingleCloudMAStrategy(Strategy):
                 index=data.index,
             )
         else:
-            in_session = pd.Series(
-                [True] * len(data),
-                index=data.index,
+            in_session = (
+                pd.Series(
+                    [True] * len(data),
+                    index=data.index,
+                ),
             )
 
-        long = in_session & longCondition
-        # longX = (
-        #     longExit if with_longX else pd.Series([False] * len(data), index=data.index)
-        # )
+        long = in_session & longCondition & (not short_only)
 
         if assume_downtrend_follows_uptrend:
             short = in_session & (longExit & (not long_only))
-            # short = in_session & ((longExit & ~long_only) | shortCondition)
-            # short = in_session & (~long_only & shortCondition)
-
         else:
-            short = in_session & shortCondition
-        # shortX = shortExit | long
+            short = in_session & shortCondition & (not long_only)
+
         longX = longExit
         shortX = shortExit
+
         if self.daytrade:
             eod = pd.DatetimeIndex(data.index).time >= datetime.time(12, 25)
         else:
@@ -136,7 +150,6 @@ class SingleCloudMAStrategy(Strategy):
                     index=data.index,
                 ),
             )
-
         return long, short, longX, shortX, longTarget, shortTarget, ma_mid, rsi, eod
 
     def init(self):
@@ -151,51 +164,32 @@ class SingleCloudMAStrategy(Strategy):
             self.rsi,
             self.eod,
         ) = self.I(
-            self.ma_single_cloud_signal,
+            self.ma_double_cloud_signal,
             self.data.df,
             self.target_pct,
             long_only=self.long_only,
+            short_only=self.short_only,
             assume_downtrend_follows_uptrend=self.assume_downtrend_follows_uptrend,
-            price_for_ma=self.price_for_ma,
             with_longX=self.with_longX,
             with_shortX=self.with_shortX,
             plot=False,
         )
-        if self.daytrade:
-            self.in_session = self.I(
-                lambda x: x,
-                pd.Series(
-                    np.logical_and(
-                        pd.DatetimeIndex(self.data.df.index).time
-                        < datetime.time(12, 25),
-                        pd.DatetimeIndex(self.data.df.index).time
-                        >= datetime.time(6, 30),
-                    ),
-                    index=self.data.df.index,
+        self.in_session = self.I(
+            lambda x: x,
+            pd.Series(
+                np.logical_and(
+                    pd.DatetimeIndex(self.data.df.index).time < datetime.time(12, 25),
+                    pd.DatetimeIndex(self.data.df.index).time >= datetime.time(6, 30),
                 ),
-                plot=False,
-            )
-        else:
-            self.in_session = self.I(
-                lambda x: x,
-                pd.Series(
-                    [True] * len(self.data.df),
-                    index=self.data.df.index,
-                ),
-                plot=False,
-            )
-            self.eod = self.I(
-                lambda x: x,
-                pd.Series(
-                    [False] * len(self.data.df),
-                    index=self.data.df.index,
-                ),
-                plot=False,
-            )
-
+                index=self.data.df.index,
+            ),
+            plot=False,
+        )
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M:%S"))
         self.close = self.I(lambda x: x, self.data.Close, plot=False)
+        self.high = self.I(lambda x: x, self.data.High, plot=False)
+        self.low = self.I(lambda x: x, self.data.Low, plot=False)
 
     def next(self):
         if self.eod:
