@@ -283,7 +283,7 @@ class WalkforwardOptimization:
             assert (
                 len(self.in_sample_data["day"].unique()) == self.lookback
             ), f"in-sample data not equal to lookback {self.lookback}"
-            
+
             if i == self.walk_length + self.lookback:
                 objective = objective_generator(
                     self.in_sample_data,
@@ -330,34 +330,40 @@ class WalkforwardOptimization:
                 print("best_params does not exist yet")
 
             # print(self.strategy_kwargs)
-            try:
-                study.optimize(
-                    objective,
-                    n_trials=self.kwargs.get("max_trials", 1000),
-                    n_jobs=-1,
-                    show_progress_bar=True,
-                )
-                if len(self.optimization_targets) > 1:
-                    best_trial = max(study.best_trials, key=self.best_trial_function)
-                    best_params = best_trial.params
+            if (self.walk_length + self.lookback - i) % self.kwargs.get(
+                "walk_step", 1
+            ) == 0 or i == self.walk_length + self.lookback:
+                try:
+                    study.optimize(
+                        objective,
+                        n_trials=self.kwargs.get("max_trials", 1000),
+                        n_jobs=-1,
+                        show_progress_bar=True,
+                    )
+                    if len(self.optimization_targets) > 1:
+                        best_trial = max(
+                            study.best_trials, key=self.best_trial_function
+                        )
+                        best_params = best_trial.params
 
-                else:
-                    best_params = study.best_params
-
-                backtest_params = self.strategy_kwargs.copy()
-
-                for k, v in best_params.items():
-                    if int(v) == float(v):
-                        backtest_params[k] = v
                     else:
-                        backtest_params[k] = np.floor(v * 1000) / 1000
+                        best_params = study.best_params
 
-                print(best_params)
-                print(backtest_params)
-            except Exception as e:
-                print(e)
-                warnings.warn("Optimization failed. Re-use previously optimized parameters")
-                
+                    backtest_params = self.strategy_kwargs.copy()
+
+                    for k, v in best_params.items():
+                        if int(v) == float(v):
+                            backtest_params[k] = v
+                        else:
+                            backtest_params[k] = np.floor(v * 1000) / 1000
+
+                    print(best_params)
+                    print(backtest_params)
+                except Exception as e:
+                    print(e)
+                    warnings.warn(
+                        "Optimization failed. Re-use previously optimized parameters"
+                    )
 
             self.oos_data = self.data[
                 self.data.day.gt(self.days[-i]) & self.data.day.le(self.days[-j])
@@ -553,6 +559,7 @@ Profit Factor: {apply_forward_output["Profit Factor"]:.2f},
             plotly_df["Trades/Week"] = (plotly_df.reset_index().index + 1) / (
                 plotly_df["Week"].diff().fillna(0).cumsum() + 1
             )
+            print(len(plotly_df) / plotly_df["Week"].iloc[-1])
 
             plotly_df["Typical SL"] = trade_df["Typical SL"].copy()
             plotly_df["Typical TP"] = trade_df["Typical TP"].copy()
@@ -598,7 +605,9 @@ Profit Factor: {apply_forward_output["Profit Factor"]:.2f},
                 text=txt,
                 hoverinfo="all",
             )
-            sma200 = go.Line(x=plotly_df["date"], y=plotly_df["PnL"].rolling(200).mean())
+            sma200 = go.Line(
+                x=plotly_df["date"], y=plotly_df["PnL"].rolling(200).mean()
+            )
             sma50 = go.Line(x=plotly_df["date"], y=plotly_df["PnL"].rolling(50).mean())
             plotly_fig = go.Figure(data=[candlestick, sma50, sma200])
             plotly_fig.update_layout(xaxis_rangeslider_visible=False)
@@ -654,9 +663,7 @@ def objective_generator(
                     k, low=v[0], high=v[1], step=v[2]
                 )
             elif v[-1] == "categorical":
-                optimization_dict[k] = trial.suggest_categorical(
-                    k, v[0]
-                )
+                optimization_dict[k] = trial.suggest_categorical(k, v[0])
 
         backtest_params = strategy_kwargs.copy()
         backtest_params.update(optimization_dict)

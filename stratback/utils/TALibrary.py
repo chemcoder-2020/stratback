@@ -309,14 +309,24 @@ def ma_double_cloud_signal(
     newday_trendup_continuation = (
         data["isFirstBar"].fillna(False)
         & strong_trend
-        & (trend_up.fillna(False) & trend_up.shift().fillna(False) & ~longExit & ma3.gt(ma4))
+        & (
+            trend_up.fillna(False)
+            & trend_up.shift().fillna(False)
+            & ~longExit
+            & ma3.gt(ma4)
+        )
         & ma_bandwidth.pct_change().gt(0)
         & momentum_condition
     )
     newday_trenddn_continuation = (
         data["isFirstBar"].fillna(False)
         & strong_trend
-        & (trend_dn.fillna(False) & trend_dn.shift().fillna(False) & ~shortExit & ma3.lt(ma4))
+        & (
+            trend_dn.fillna(False)
+            & trend_dn.shift().fillna(False)
+            & ~shortExit
+            & ma3.lt(ma4)
+        )
         & ma_bandwidth.pct_change().gt(0)
         & ~momentum_condition
     )
@@ -375,7 +385,9 @@ def ma_double_cloud_signal(
         return signal
 
 
-def price_position_by_pivots(data, secondary_tf="D", pivot_data_shift=78):
+def price_position_by_pivots(
+    data, secondary_tf="D", pivot_data_shift=78, return_nearest_levels=False
+):
     data = data.copy().reset_index()
     data.columns = data.columns.str.lower()
     if "date" in data.columns:
@@ -437,7 +449,50 @@ def price_position_by_pivots(data, secondary_tf="D", pivot_data_shift=78):
     price_position = pd.concat(
         [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
     ).apply(np.argmax, axis=1)
-    return price_position
+    levels = pd.concat(
+        [
+            pd.Series([0] * len(price_position), index=data.index),
+            vS5,
+            vS4,
+            vS3,
+            vS2,
+            vS1,
+            vPP,
+            vR1,
+            vR2,
+            vR3,
+            vR4,
+            vR5,
+            pd.Series([np.inf] * len(price_position), index=data.index),
+        ],
+        axis=1,
+    )
+    nearest_levels = pd.concat(
+        [
+            pd.Series(
+                [row[1][p] for row, p in zip(levels.iterrows(), price_position)],
+                index=data.index,
+            ),
+            pd.Series(
+                [row[1][p + 1] for row, p in zip(levels.iterrows(), price_position)],
+                index=data.index,
+            ),
+        ],
+        axis=1,
+    )
+    nearest_levels.columns = ["S", "R"]
+    nearest_levels["MID"] = (nearest_levels["S"] + nearest_levels["R"]) / 2
+    nearest_levels["38.2"] = (
+        nearest_levels["S"] + (nearest_levels["R"] - nearest_levels["S"]) * 0.382
+    )
+    nearest_levels["61.8"] = (
+        nearest_levels["S"] + (nearest_levels["R"] - nearest_levels["S"]) * 0.618
+    )
+
+    if return_nearest_levels:
+        return price_position, nearest_levels
+    else:
+        return price_position
 
 
 def MTFVWAP(
