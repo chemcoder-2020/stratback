@@ -277,9 +277,13 @@ class WalkforwardOptimization:
             else:
                 j = i - self.lookback
 
-            self.in_sample_data = self.data[
-                self.data.day.ge(self.days[-i]) & self.data.day.lt(self.days[-j])
-            ].reset_index()  # Update in_sample_data for optim
+            if self.kwargs.get("walk_mode", "walkforward") == "walkforward":
+                self.in_sample_data = self.data[
+                    self.data.day.ge(self.days[-i]) & self.data.day.lt(self.days[-j])
+                ].reset_index()  # Update in_sample_data for optim
+            else: # expanding window mode
+                self.in_sample_data = self.data[self.data.day.lt(self.days[-j])].reset_index()  # Update in_sample_data for optim
+                
             assert (
                 len(self.in_sample_data["day"].unique()) == self.lookback
             ), f"in-sample data not equal to lookback {self.lookback}"

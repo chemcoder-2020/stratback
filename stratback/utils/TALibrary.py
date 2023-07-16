@@ -611,6 +611,30 @@ def MTFVWAP(
         return signal
 
 
+def intraday_dynamic_level_breaks(data, return_levels=False):
+    data = data.copy()
+    if "date" in data.columns:
+        data.set_index("date", inplace=True)
+    dynamic_support = data.low.groupby(data.index.to_period("D")).cummin()
+    dynamic_resistance = data.high.groupby(data.index.to_period("D")).cummax()
+    support_nbreaks = (
+        dynamic_support.ne(dynamic_support.shift())
+        .groupby(dynamic_support.index.to_period("D"))
+        .cumsum()
+        - 1
+    )
+    resistance_nbreaks = (
+        dynamic_resistance.ne(dynamic_resistance.shift())
+        .groupby(dynamic_resistance.index.to_period("D"))
+        .cumsum()
+        - 1
+    )
+    if return_levels:
+        return dynamic_support, dynamic_resistance
+    else:
+        return support_nbreaks, resistance_nbreaks
+
+
 def vwapbounce_signal(
     data,
     HTF1="D",
