@@ -611,6 +611,146 @@ def MTFVWAP(
         return signal
 
 
+def vwapbounce_signal(
+    data,
+    HTF1="D",
+    HTF2="W",
+    ntouch=2,
+    entry_zone="('6:30', '7:30')",
+    daytrade=True,
+    use_rsi=False,
+    pivot_shift=78,
+    price_move_tp=None,
+    long_only=True,
+    short_only=False,
+    shift=True,
+):
+    data = data.copy()
+
+    if "date" in data.columns:
+        data.set_index("date", inplace=True)
+    data["day"] = pd.DatetimeIndex(data.index).date
+    data["isFirstBar"] = data["day"].diff() >= "1 days"
+
+    def calc_vwap(df, tf):
+        if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
+            return (df.ta.hlc3() * df.Volume).groupby(
+                df.index.floor(tf)
+            ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
+        else:
+            return df.ta.vwap(anchor=tf)
+
+    rsi = pt.rsi(data.ta.hlc3(), 10)
+    rsi_up = rsi.gt(rsi.shift())
+    use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
+
+    avwap_htf1 = calc_vwap(data, HTF1)
+    vwap_crossabove_htf1 = data.Close.gt(avwap_htf1) & data.Open.lt(avwap_htf1)
+    vwap_crossabove_htf1 = vwap_crossabove_htf1.groupby(
+        vwap_crossabove_htf1.index.to_period(HTF1)
+    ).cumsum()
+    vwap_crossbelow_htf1 = data.Close.lt(avwap_htf1) & data.Open.gt(avwap_htf1)
+    vwap_crossbelow_htf1 = vwap_crossbelow_htf1.groupby(
+        vwap_crossbelow_htf1.index.to_period(HTF1)
+    ).cumsum()
+
+    avwap_htf2 = calc_vwap(data, HTF2)
+    vwap_crossabove_htf2 = data.Close.gt(avwap_htf2) & data.Open.lt(avwap_htf2)
+    vwap_crossabove_htf2 = vwap_crossabove_htf2.groupby(
+        vwap_crossabove_htf2.index.to_period(HTF2)
+    ).cumsum()
+    vwap_crossbelow_htf2 = data.Close.lt(avwap_htf2) & data.Open.gt(avwap_htf2)
+    vwap_crossbelow_htf2 = vwap_crossbelow_htf2.groupby(
+        vwap_crossbelow_htf2.index.to_period(HTF2)
+    ).cumsum()
+
+    if price_move_tp is not None:
+        price_position = price_position_by_pivots(data, pivot_data_shift=pivot_shift)
+        pexp = price_position.groupby(price_position.index.to_period("D")).expanding()
+        price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
+        price_move = price_move.droplevel(0)
+
+    entry_hr_left = int(eval(entry_zone)[0].split(":")[0])
+    entry_min_left = int(eval(entry_zone)[0].split(":")[1])
+    entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
+    entry_min_right = int(eval(entry_zone)[1].split(":")[1])
+    longCondition = (
+        (vwap_crossabove_htf1.eq(ntouch))
+        & use_rsi_cond[use_rsi][0]
+        & avwap_htf1.gt(avwap_htf2)
+        & pd.Series(
+            np.logical_and(
+                pd.DatetimeIndex(data.index).time
+                < datetime.time(entry_hr_right, entry_min_right),
+                pd.DatetimeIndex(data.index).time
+                >= datetime.time(entry_hr_left, entry_min_left),
+            ),
+            index=data.index,
+        )
+    )
+
+    shortCondition = (
+        (vwap_crossbelow_htf1.eq(ntouch))
+        & use_rsi_cond[use_rsi][1]
+        & avwap_htf1.lt(avwap_htf2)
+        & pd.Series(
+            np.logical_and(
+                pd.DatetimeIndex(data.index).time
+                < datetime.time(entry_hr_right, entry_min_right),
+                pd.DatetimeIndex(data.index).time
+                >= datetime.time(entry_hr_left, entry_min_left),
+            ),
+            index=data.index,
+        )
+    )
+
+    if daytrade:
+        in_session = pd.Series(
+            np.logical_and(
+                pd.DatetimeIndex(data.index).time < datetime.time(12, 25),
+                pd.DatetimeIndex(data.index).time >= datetime.time(6, 30),
+            ),
+            index=data.index,
+        )
+    else:
+        in_session = (
+            pd.Series(
+                [True] * len(data),
+                index=data.index,
+            ),
+        )
+
+    long = in_session & longCondition & (not short_only)
+    short = in_session & shortCondition & (not long_only)
+
+    longX = (
+        price_move.eq(price_move_tp) & price_move.shift().ne(price_move_tp)
+        if price_move_tp is not None
+        else pd.Series([False] * len(data), index=data.index)
+    )
+    shortX = (
+        price_move.eq(-price_move_tp) & price_move.shift().ne(-price_move_tp)
+        if price_move_tp is not None
+        else pd.Series([False] * len(data), index=data.index)
+    )
+    signal = pd.DataFrame(
+        columns=["Long", "LongX", "Short", "ShortX"], index=data.index
+    )
+    signal["isFirstBar"] = data["isFirstBar"]
+    signal["Long"] = long
+    signal["LongX"] = longX
+    signal["Short"] = short
+    signal["ShortX"] = shortX
+    signal["RSI"] = rsi
+    signal["EOD"] = (pd.DatetimeIndex(signal.index).time >= datetime.time(12, 25)) & (
+        pd.DatetimeIndex(signal.index).time <= datetime.time(12, 55)
+    )
+    if shift:
+        return signal.shift()
+    else:
+        return signal
+
+
 def EhlersRoofing(close, fast_length, slow_length):
     return EhlersSuperSmoother(EhlersHighpass(close, slow_length), fast_length)
 

@@ -11,7 +11,8 @@ import re
 class VWAPBounceStrategy(Strategy):
     HTF1 = "D"
     HTF2 = "W"
-    HTF3 = "M"
+    ntouch = 2
+    entry_zone = "('6:30', '7:30')"
     size = None
     long_only = True
     short_only = False
@@ -50,28 +51,23 @@ class VWAPBounceStrategy(Strategy):
 
         avwap_htf1 = calc_vwap(data, self.HTF1)
         vwap_crossabove_htf1 = data.Close.gt(avwap_htf1) & data.Open.lt(avwap_htf1)
-        vwap_crossabove_htf1 = vwap_crossabove_htf1.groupby(vwap_crossabove_htf1.index.to_period(self.HTF1)).expanding().sum()
+        vwap_crossabove_htf1 = vwap_crossabove_htf1.groupby(
+            vwap_crossabove_htf1.index.to_period(self.HTF1)
+        ).cumsum()
         vwap_crossbelow_htf1 = data.Close.lt(avwap_htf1) & data.Open.gt(avwap_htf1)
-        vwap_crossbelow_htf1 = vwap_crossbelow_htf1.groupby(vwap_crossbelow_htf1.index.to_period(self.HTF1)).expanding().sum()
+        vwap_crossbelow_htf1 = vwap_crossbelow_htf1.groupby(
+            vwap_crossbelow_htf1.index.to_period(self.HTF1)
+        ).cumsum()
 
-        if self.HTF2:
-            avwap_htf2 = calc_vwap(data, self.HTF2)
-            vwap_crossabove_htf2 = data.Close.gt(avwap_htf2) & data.Open.lt(avwap_htf2)
-            vwap_crossabove_htf2 = vwap_crossabove_htf2.groupby(vwap_crossabove_htf2.index.to_period(self.HTF2)).expanding().sum()
-            vwap_crossbelow_htf2 = data.Close.lt(avwap_htf2) & data.Open.gt(avwap_htf2)
-            vwap_crossbelow_htf2 = vwap_crossbelow_htf2.groupby(vwap_crossbelow_htf2.index.to_period(self.HTF2)).expanding().sum()
-        else:
-            vwap_crossabove_htf2 = pd.Series([False] * len(data), index=data.index)
-            vwap_crossbelow_htf2 = pd.Series([False] * len(data), index=data.index)
-        if self.HTF3:
-            avwap_htf3 = calc_vwap(data, self.HTF3)
-            vwap_crossabove_htf3 = data.Close.gt(avwap_htf3) & data.Open.lt(avwap_htf3)
-            vwap_crossabove_htf3 = vwap_crossabove_htf3.groupby(vwap_crossabove_htf3.index.to_period(self.HTF3)).expanding().sum()
-            vwap_crossbelow_htf3 = data.Close.lt(avwap_htf3) & data.Open.gt(avwap_htf3)
-            vwap_crossbelow_htf3 = vwap_crossbelow_htf3.groupby(vwap_crossbelow_htf3.index.to_period(self.HTF3)).expanding().sum()
-        else:
-            vwap_crossabove_htf3 = pd.Series([False] * len(data), index=data.index)
-            vwap_crossbelow_htf3 = pd.Series([False] * len(data), index=data.index)
+        avwap_htf2 = calc_vwap(data, self.HTF2)
+        vwap_crossabove_htf2 = data.Close.gt(avwap_htf2) & data.Open.lt(avwap_htf2)
+        vwap_crossabove_htf2 = vwap_crossabove_htf2.groupby(
+            vwap_crossabove_htf2.index.to_period(self.HTF2)
+        ).cumsum()
+        vwap_crossbelow_htf2 = data.Close.lt(avwap_htf2) & data.Open.gt(avwap_htf2)
+        vwap_crossbelow_htf2 = vwap_crossbelow_htf2.groupby(
+            vwap_crossbelow_htf2.index.to_period(self.HTF2)
+        ).cumsum()
 
         if self.price_move_tp is not None:
             price_position = price_position_by_pivots(
@@ -83,14 +79,39 @@ class VWAPBounceStrategy(Strategy):
             price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
             price_move = price_move.droplevel(0)
 
-
+        entry_hr_left = int(eval(self.entry_zone)[0].split(":")[0])
+        entry_min_left = int(eval(self.entry_zone)[0].split(":")[1])
+        entry_hr_right = int(eval(self.entry_zone)[1].split(":")[0])
+        entry_min_right = int(eval(self.entry_zone)[1].split(":")[1])
         longCondition = (
-            vwap_crossabove_htf1.eq(2) | vwap_crossabove_htf2.eq(2) | vwap_crossabove_htf3.eq(2)
-        ) & use_rsi_cond[self.use_rsi][0]
+            (vwap_crossabove_htf1.eq(self.ntouch))
+            & use_rsi_cond[self.use_rsi][0]
+            & avwap_htf1.gt(avwap_htf2)
+            & pd.Series(
+                np.logical_and(
+                    pd.DatetimeIndex(data.index).time
+                    < datetime.time(entry_hr_right, entry_min_right),
+                    pd.DatetimeIndex(data.index).time
+                    >= datetime.time(entry_hr_left, entry_min_left),
+                ),
+                index=data.index,
+            )
+        )
 
         shortCondition = (
-            vwap_crossbelow_htf1.eq(2) | vwap_crossbelow_htf2.eq(2) | vwap_crossbelow_htf3.eq(2)
-        ) & use_rsi_cond[self.use_rsi][1]
+            (vwap_crossbelow_htf1.eq(self.ntouch))
+            & use_rsi_cond[self.use_rsi][1]
+            & avwap_htf1.lt(avwap_htf2)
+            & pd.Series(
+                np.logical_and(
+                    pd.DatetimeIndex(data.index).time
+                    < datetime.time(entry_hr_right, entry_min_right),
+                    pd.DatetimeIndex(data.index).time
+                    >= datetime.time(entry_hr_left, entry_min_left),
+                ),
+                index=data.index,
+            )
+        )
 
         if self.daytrade:
             in_session = pd.Series(
@@ -146,7 +167,7 @@ class VWAPBounceStrategy(Strategy):
             self.rsi,
             self.eod,
         ) = self.I(
-            self.mtfvwap_signal,
+            self.vwapbounce_signal,
             self.data.df,
             long_only=self.long_only,
             short_only=self.short_only,
@@ -177,8 +198,6 @@ class VWAPBounceStrategy(Strategy):
 
         self.vwap_htf1 = self.I(calc_vwap, self.data.df, self.HTF1, overlay=True)
         self.vwap_htf2 = self.I(calc_vwap, self.data.df, self.HTF2, overlay=True)
-        if self.use_three_TF:
-            self.vwap_htf3 = self.I(calc_vwap, self.data.df, self.HTF3, overlay=True)
 
     def next(self):
         if self.eod:
