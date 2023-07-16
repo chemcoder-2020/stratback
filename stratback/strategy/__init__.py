@@ -3,6 +3,7 @@ from .doubleCloudMAStrategyV1 import DoubleCloudMAStrategyV1
 from .doubleCloudMAVWAPStrategy import DoubleCloudMAVWAPStrategy
 from .MTFVWAPStrategy import MTFVWAPStrategy
 from .MTFVWAPSingleCloudMAStrategy import MTFVWAPSingleCloudMAStrategy
+from .VWAPBounceStrategy import VWAPBounceStrategy
 from .singleCloudMAStrategy import SingleCloudMAStrategy
 from .singleCloudMAStrategyV2 import SingleCloudMAStrategyV2
 from .singleCloudMAStrategyV3 import SingleCloudMAStrategyV3
