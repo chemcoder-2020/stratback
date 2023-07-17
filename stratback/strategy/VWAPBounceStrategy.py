@@ -23,6 +23,8 @@ class VWAPBounceStrategy(Strategy):
     use_rsi = False
     pivot_shift = 78
     price_move_tp = None
+    restrict_entry_zone = True
+    filter_by_secondary_timeframe = True
 
     def vwapbounce_signal(
         self,
@@ -83,11 +85,16 @@ class VWAPBounceStrategy(Strategy):
         entry_min_left = int(eval(self.entry_zone)[0].split(":")[1])
         entry_hr_right = int(eval(self.entry_zone)[1].split(":")[0])
         entry_min_right = int(eval(self.entry_zone)[1].split(":")[1])
+        
         longCondition = (
             (vwap_crossabove_htf1.eq(self.ntouch))
             & use_rsi_cond[self.use_rsi][0]
-            & avwap_htf1.gt(avwap_htf2)
-            & pd.Series(
+        )
+        if self.filter_by_secondary_timeframe:
+            longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
+        
+        if self.restrict_entry_zone:
+            longCondition = longCondition & pd.Series(
                 np.logical_and(
                     pd.DatetimeIndex(data.index).time
                     < datetime.time(entry_hr_right, entry_min_right),
@@ -96,13 +103,15 @@ class VWAPBounceStrategy(Strategy):
                 ),
                 index=data.index,
             )
-        )
 
         shortCondition = (
             (vwap_crossbelow_htf1.eq(self.ntouch))
             & use_rsi_cond[self.use_rsi][1]
-            & avwap_htf1.lt(avwap_htf2)
-            & pd.Series(
+        )
+        if self.filter_by_secondary_timeframe:
+            shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
+        if self.restrict_entry_zone:
+            shortCondition = shortCondition & pd.Series(
                 np.logical_and(
                     pd.DatetimeIndex(data.index).time
                     < datetime.time(entry_hr_right, entry_min_right),
@@ -111,7 +120,6 @@ class VWAPBounceStrategy(Strategy):
                 ),
                 index=data.index,
             )
-        )
 
         if self.daytrade:
             in_session = pd.Series(
