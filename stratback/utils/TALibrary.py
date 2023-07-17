@@ -648,6 +648,8 @@ def vwapbounce_signal(
     long_only=True,
     short_only=False,
     shift=True,
+    restrict_entry_zone=True,
+    filter_by_secondary_timeframe=True,
 ):
     data = data.copy()
 
@@ -701,8 +703,12 @@ def vwapbounce_signal(
     longCondition = (
         (vwap_crossabove_htf1.eq(ntouch))
         & use_rsi_cond[use_rsi][0]
-        & avwap_htf1.gt(avwap_htf2)
-        & pd.Series(
+    )
+    if filter_by_secondary_timeframe:
+        longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
+    
+    if restrict_entry_zone:
+        longCondition = longCondition & pd.Series(
             np.logical_and(
                 pd.DatetimeIndex(data.index).time
                 < datetime.time(entry_hr_right, entry_min_right),
@@ -711,13 +717,15 @@ def vwapbounce_signal(
             ),
             index=data.index,
         )
-    )
 
     shortCondition = (
         (vwap_crossbelow_htf1.eq(ntouch))
         & use_rsi_cond[use_rsi][1]
-        & avwap_htf1.lt(avwap_htf2)
-        & pd.Series(
+    )
+    if filter_by_secondary_timeframe:
+        shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
+    if restrict_entry_zone:
+        shortCondition = shortCondition & pd.Series(
             np.logical_and(
                 pd.DatetimeIndex(data.index).time
                 < datetime.time(entry_hr_right, entry_min_right),
@@ -726,7 +734,6 @@ def vwapbounce_signal(
             ),
             index=data.index,
         )
-    )
 
     if daytrade:
         in_session = pd.Series(
