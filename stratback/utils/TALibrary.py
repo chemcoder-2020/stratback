@@ -660,9 +660,9 @@ def vwapbounce_signal(
 
     def calc_vwap(df, tf):
         if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-            return (df.ta.hlc3() * df.Volume).groupby(
+            return (df.ta.hlc3() * df.volume).groupby(
                 df.index.floor(tf)
-            ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
+            ).cumsum() / df.volume.groupby(df.index.floor(tf)).cumsum()
         else:
             return df.ta.vwap(anchor=tf)
 
@@ -671,21 +671,21 @@ def vwapbounce_signal(
     use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
 
     avwap_htf1 = calc_vwap(data, HTF1)
-    vwap_crossabove_htf1 = data.Close.gt(avwap_htf1) & data.Open.lt(avwap_htf1)
+    vwap_crossabove_htf1 = data.close.gt(avwap_htf1) & data.open.lt(avwap_htf1)
     vwap_crossabove_htf1 = vwap_crossabove_htf1.groupby(
         vwap_crossabove_htf1.index.to_period(HTF1)
     ).cumsum()
-    vwap_crossbelow_htf1 = data.Close.lt(avwap_htf1) & data.Open.gt(avwap_htf1)
+    vwap_crossbelow_htf1 = data.close.lt(avwap_htf1) & data.open.gt(avwap_htf1)
     vwap_crossbelow_htf1 = vwap_crossbelow_htf1.groupby(
         vwap_crossbelow_htf1.index.to_period(HTF1)
     ).cumsum()
 
     avwap_htf2 = calc_vwap(data, HTF2)
-    vwap_crossabove_htf2 = data.Close.gt(avwap_htf2) & data.Open.lt(avwap_htf2)
+    vwap_crossabove_htf2 = data.close.gt(avwap_htf2) & data.open.lt(avwap_htf2)
     vwap_crossabove_htf2 = vwap_crossabove_htf2.groupby(
         vwap_crossabove_htf2.index.to_period(HTF2)
     ).cumsum()
-    vwap_crossbelow_htf2 = data.Close.lt(avwap_htf2) & data.Open.gt(avwap_htf2)
+    vwap_crossbelow_htf2 = data.close.lt(avwap_htf2) & data.open.gt(avwap_htf2)
     vwap_crossbelow_htf2 = vwap_crossbelow_htf2.groupby(
         vwap_crossbelow_htf2.index.to_period(HTF2)
     ).cumsum()
