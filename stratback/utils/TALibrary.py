@@ -673,25 +673,25 @@ def vwapbounce_signal(
 
     def vwap_crossabove(data, vwap_line, tf, consider_wicks=False):
         if consider_wicks:
-            crossabove = (data.Close.gt(vwap_line) & data.Open.lt(vwap_line)) | (
-                data.Open.gt(vwap_line)
-                & data.Close.gt(vwap_line)
-                & data.Low.lt(vwap_line)
+            crossabove = (data.close.gt(vwap_line) & data.open.lt(vwap_line)) | (
+                data.open.gt(vwap_line)
+                & data.close.gt(vwap_line)
+                & data.low.lt(vwap_line)
             )
         else:
-            crossabove = data.Close.gt(vwap_line) & data.Open.lt(vwap_line)
+            crossabove = data.close.gt(vwap_line) & data.open.lt(vwap_line)
         crossabove = crossabove.groupby(crossabove.index.to_period(tf)).cumsum()
         return crossabove
 
     def vwap_crossbelow(data, vwap_line, tf, consider_wicks=False):
         if consider_wicks:
-            crossbelow = (data.Close.lt(vwap_line) & data.Open.gt(vwap_line)) | (
-                data.Open.lt(vwap_line)
-                & data.Close.lt(vwap_line)
-                & data.High.gt(vwap_line)
+            crossbelow = (data.close.lt(vwap_line) & data.open.gt(vwap_line)) | (
+                data.open.lt(vwap_line)
+                & data.close.lt(vwap_line)
+                & data.high.gt(vwap_line)
             )
         else:
-            crossbelow = data.Close.lt(vwap_line) & data.Open.gt(vwap_line)
+            crossbelow = data.close.lt(vwap_line) & data.open.gt(vwap_line)
         crossbelow = crossbelow.groupby(crossbelow.index.to_period(tf)).cumsum()
         return crossbelow
 
