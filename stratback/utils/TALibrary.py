@@ -496,12 +496,14 @@ def price_position_by_pivots(
 
 
 def calc_vwap(df, tf):
+    df = df.copy()
+    df.columns = df.columns.str.lower()
     if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
         first_time = df.index.unique().time[0].strftime("%H:%M:%S")
         group = (df.index - pd.Timedelta(first_time)).floor(tf) + pd.Timedelta(
             first_time
         )
-        return (df.ta.hlc3() * df.Volume).groupby(group).cumsum() / df.Volume.groupby(
+        return (df.ta.hlc3() * df.volume).groupby(group).cumsum() / df.volume.groupby(
             group
         ).cumsum()
     else:
@@ -524,7 +526,7 @@ def MTFVWAP(
     daytrade=True,
 ):
     data = data.copy()
-
+    data.columns = data.columns.str.lower()
     if "date" in data.columns:
         data.set_index("date", inplace=True)
     data["day"] = pd.DatetimeIndex(data.index).date
@@ -618,6 +620,7 @@ def MTFVWAP(
 
 def intraday_dynamic_level_breaks(data, return_levels=False):
     data = data.copy()
+    data.columns = data.columns.str.lower()
     if "date" in data.columns:
         data.set_index("date", inplace=True)
     dynamic_support = data.low.groupby(data.index.to_period("D")).cummin()
@@ -658,7 +661,7 @@ def vwapbounce_signal(
     consider_wicks=False,
 ):
     data = data.copy()
-
+    data.columns = data.columns.str.lower()
     if "date" in data.columns:
         data.set_index("date", inplace=True)
     data["day"] = pd.DatetimeIndex(data.index).date
