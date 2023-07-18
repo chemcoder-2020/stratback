@@ -94,7 +94,7 @@ class VWAPBounceStrategy(Strategy):
         entry_hr_right = int(eval(self.entry_zone)[1].split(":")[0])
         entry_min_right = int(eval(self.entry_zone)[1].split(":")[1])
 
-        longCondition = (vwap_crossabove_htf1.eq(self.ntouch)) & use_rsi_cond[
+        longCondition = (vwap_crossabove_htf1.eq(self.ntouch) & vwap_crossabove_htf1.shift().ne(self.ntouch)) & use_rsi_cond[
             self.use_rsi
         ][0]
         if self.filter_by_secondary_timeframe:
@@ -111,7 +111,7 @@ class VWAPBounceStrategy(Strategy):
                 index=data.index,
             )
 
-        shortCondition = (vwap_crossbelow_htf1.eq(self.ntouch)) & use_rsi_cond[
+        shortCondition = (vwap_crossbelow_htf1.eq(self.ntouch) & vwap_crossbelow_htf1.ne(self.ntouch)) & use_rsi_cond[
             self.use_rsi
         ][1]
         if self.filter_by_secondary_timeframe:

@@ -721,7 +721,7 @@ def vwapbounce_signal(
     entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
     entry_min_right = int(eval(entry_zone)[1].split(":")[1])
 
-    longCondition = (vwap_crossabove_htf1.eq(ntouch)) & use_rsi_cond[
+    longCondition = (vwap_crossabove_htf1.eq(ntouch) & vwap_crossabove_htf1.shift().ne(ntouch)) & use_rsi_cond[
         use_rsi
     ][0]
     if filter_by_secondary_timeframe:
@@ -738,7 +738,7 @@ def vwapbounce_signal(
             index=data.index,
         )
 
-    shortCondition = (vwap_crossbelow_htf1.eq(ntouch)) & use_rsi_cond[
+    shortCondition = (vwap_crossbelow_htf1.eq(ntouch) & vwap_crossbelow_htf1.shift().ne(ntouch)) & use_rsi_cond[
         use_rsi
     ][1]
     if filter_by_secondary_timeframe:
