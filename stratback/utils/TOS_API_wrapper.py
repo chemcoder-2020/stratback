@@ -878,37 +878,12 @@ class client(Client):
             str(c) for c in df.columns
         ]  # update columns to strings in case they are numbers
 
-        # data = self.get_daily_data(symbol)
-        # df["DiffToStrike"] = (df["strikePrice"] - data.iloc[-1].close) * df[
-        #     "putCall"
-        # ].eq("PUT").astype(int).replace(0, -1)
-        # df["Premium"] = df["DiffToStrike"] * df["openInterest"]  # .abs()
-
-        # maxpain = df.groupby(["strikePrice"])["Premium"].sum().idxmax()
-        # print(df.groupby(["strikePrice"])["Premium"].sum())
-        # print(maxpain)
-
         if not query:
             expdate = df["expirationDate"].iloc[0]
             maxpain_df = df.query(f"expirationDate == '{expdate.strftime('%Y-%m-%d')}'")
         else:
             maxpain_df = df.copy()
-        # maxpain_df["premiums"] = np.sum(
-        #     [
-        #         maxpain_df["openInterest"]
-        #         * (
-        #             (maxpain_df["strikePrice"] - strike)
-        #             * maxpain_df["putCall"].eq("CALL").astype(int).replace(0, -1)
-        #         ).apply(lambda x: max(0, x))
-        #         for strike in np.sort(np.unique(maxpain_df.strikePrice))
-        #     ],
-        #     axis=0,
-        # )
-        # maxpain = (
-        #     maxpain_df.groupby(["expirationDate", "strikePrice"])["premiums"]
-        #     .sum()
-        #     .idxmin()[1]
-        # )
+
         maxpain = max_pain(maxpain_df.reset_index())
 
         chart_data = pd.concat(

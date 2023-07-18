@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pandas_ta as pt
 from stratback.utils.TALibrary import (
-    vwap,
+    vwap, calc_vwap
 )
 import datetime
 import re
@@ -48,13 +48,7 @@ class DoubleCloudMAVWAPStrategy(Strategy):
             data.set_index("date", inplace=True)
         data["day"] = pd.DatetimeIndex(data.index).date
         data["isFirstBar"] = data["day"].diff() >= "1 days"
-        def calc_vwap(df, tf):
-            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-                return (df.ta.hlc3() * df.Volume).groupby(
-                    df.index.floor(tf)
-                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-            else:
-                return df.ta.vwap(anchor=tf)
+
         avwap_htf1 = calc_vwap(data, self.HTF1)
         avwap_htf2 = calc_vwap(data, self.HTF2)
         avwap_up = avwap_htf1.gt(avwap_htf2)

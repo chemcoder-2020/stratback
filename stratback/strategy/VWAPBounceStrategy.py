@@ -3,7 +3,7 @@ from stratback.backtesting.lib import crossover
 import numpy as np
 import pandas as pd
 import pandas_ta as pt
-from stratback.utils.TALibrary import vwap, price_position_by_pivots
+from stratback.utils.TALibrary import vwap, price_position_by_pivots, calc_vwap
 import datetime
 import re
 
@@ -25,6 +25,7 @@ class VWAPBounceStrategy(Strategy):
     price_move_tp = None
     restrict_entry_zone = True
     filter_by_secondary_timeframe = True
+    consider_wicks = False
 
     def vwapbounce_signal(
         self,
@@ -39,44 +40,51 @@ class VWAPBounceStrategy(Strategy):
         data["day"] = pd.DatetimeIndex(data.index).date
         data["isFirstBar"] = data["day"].diff() >= "1 days"
 
-        def calc_vwap(df, tf):
-            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-                return (df.ta.hlc3() * df.Volume).groupby(
-                    df.index.floor(tf)
-                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-            else:
-                return df.ta.vwap(anchor=tf)
-
         rsi = pt.rsi(data.ta.hlc3(), 10)
         rsi_up = rsi.gt(rsi.shift())
         use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
 
+        def vwap_crossabove(data, vwap_line, tf, consider_wicks=False):
+            if consider_wicks:
+                crossabove = (data.Close.gt(vwap_line) & data.Open.lt(vwap_line)) | (
+                    data.Open.gt(vwap_line)
+                    & data.Close.gt(vwap_line)
+                    & data.Low.lt(vwap_line)
+                )
+            else:
+                crossabove = data.Close.gt(vwap_line) & data.Open.lt(vwap_line)
+            crossabove = crossabove.groupby(crossabove.index.to_period(tf)).cumsum()
+            return crossabove
+
+        def vwap_crossbelow(data, vwap_line, tf, consider_wicks=False):
+            if consider_wicks:
+                crossbelow = (data.Close.lt(vwap_line) & data.Open.gt(vwap_line)) | (
+                    data.Open.lt(vwap_line)
+                    & data.Close.lt(vwap_line)
+                    & data.High.gt(vwap_line)
+                )
+            else:
+                crossbelow = data.Close.lt(vwap_line) & data.Open.gt(vwap_line)
+            crossbelow = crossbelow.groupby(crossbelow.index.to_period(tf)).cumsum()
+            return crossbelow
+
         avwap_htf1 = calc_vwap(data, self.HTF1)
-        vwap_crossabove_htf1 = data.Close.gt(avwap_htf1) & data.Open.lt(avwap_htf1)
-        vwap_crossabove_htf1 = vwap_crossabove_htf1.groupby(
-            vwap_crossabove_htf1.index.to_period(self.HTF1)
-        ).cumsum()
-        vwap_crossbelow_htf1 = data.Close.lt(avwap_htf1) & data.Open.gt(avwap_htf1)
-        vwap_crossbelow_htf1 = vwap_crossbelow_htf1.groupby(
-            vwap_crossbelow_htf1.index.to_period(self.HTF1)
-        ).cumsum()
+        vwap_crossabove_htf1 = vwap_crossabove(
+            data, avwap_htf1, self.HTF1, consider_wicks=self.consider_wicks
+        )
+
+        vwap_crossbelow_htf1 = vwap_crossbelow(
+            data, avwap_htf1, self.HTF1, consider_wicks=self.consider_wicks
+        )
 
         avwap_htf2 = calc_vwap(data, self.HTF2)
-        vwap_crossabove_htf2 = data.Close.gt(avwap_htf2) & data.Open.lt(avwap_htf2)
-        vwap_crossabove_htf2 = vwap_crossabove_htf2.groupby(
-            vwap_crossabove_htf2.index.to_period(self.HTF2)
-        ).cumsum()
-        vwap_crossbelow_htf2 = data.Close.lt(avwap_htf2) & data.Open.gt(avwap_htf2)
-        vwap_crossbelow_htf2 = vwap_crossbelow_htf2.groupby(
-            vwap_crossbelow_htf2.index.to_period(self.HTF2)
-        ).cumsum()
 
         if self.price_move_tp is not None:
             price_position = price_position_by_pivots(
                 data, pivot_data_shift=self.pivot_shift
             )
             pexp = price_position.groupby(
-                price_position.index.to_period("D")
+                price_position.index.to_period(self.HTF1)
             ).expanding()
             price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
             price_move = price_move.droplevel(0)
@@ -85,14 +93,13 @@ class VWAPBounceStrategy(Strategy):
         entry_min_left = int(eval(self.entry_zone)[0].split(":")[1])
         entry_hr_right = int(eval(self.entry_zone)[1].split(":")[0])
         entry_min_right = int(eval(self.entry_zone)[1].split(":")[1])
-        
-        longCondition = (
-            (vwap_crossabove_htf1.eq(self.ntouch))
-            & use_rsi_cond[self.use_rsi][0]
-        )
+
+        longCondition = (vwap_crossabove_htf1.eq(self.ntouch)) & use_rsi_cond[
+            self.use_rsi
+        ][0]
         if self.filter_by_secondary_timeframe:
             longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
-        
+
         if self.restrict_entry_zone:
             longCondition = longCondition & pd.Series(
                 np.logical_and(
@@ -104,10 +111,9 @@ class VWAPBounceStrategy(Strategy):
                 index=data.index,
             )
 
-        shortCondition = (
-            (vwap_crossbelow_htf1.eq(self.ntouch))
-            & use_rsi_cond[self.use_rsi][1]
-        )
+        shortCondition = (vwap_crossbelow_htf1.eq(self.ntouch)) & use_rsi_cond[
+            self.use_rsi
+        ][1]
         if self.filter_by_secondary_timeframe:
             shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
         if self.restrict_entry_zone:
@@ -195,14 +201,6 @@ class VWAPBounceStrategy(Strategy):
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M"))
         self.close = self.I(lambda x: x, self.data.Close, plot=False)
-
-        def calc_vwap(df, tf):
-            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-                return (df.ta.hlc3() * df.Volume).groupby(
-                    df.index.floor(tf)
-                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-            else:
-                return df.ta.vwap(anchor=tf)
 
         self.vwap_htf1 = self.I(calc_vwap, self.data.df, self.HTF1, overlay=True)
         self.vwap_htf2 = self.I(calc_vwap, self.data.df, self.HTF2, overlay=True)

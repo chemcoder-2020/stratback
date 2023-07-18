@@ -3,7 +3,7 @@ from stratback.backtesting.lib import crossover
 import numpy as np
 import pandas as pd
 import pandas_ta as pt
-from stratback.utils.TALibrary import vwap, price_position_by_pivots
+from stratback.utils.TALibrary import vwap, price_position_by_pivots, calc_vwap
 import datetime
 import re
 
@@ -40,14 +40,6 @@ class MTFVWAPSingleCloudMAStrategy(Strategy):
             data.set_index("date", inplace=True)
         data["day"] = pd.DatetimeIndex(data.index).date
         data["isFirstBar"] = data["day"].diff() >= "1 days"
-
-        def calc_vwap(df, tf):
-            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-                return (df.ta.hlc3() * df.Volume).groupby(
-                    df.index.floor(tf)
-                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-            else:
-                return df.ta.vwap(anchor=tf)
 
         rsi = pt.rsi(data.ta.hlc3(), 10)
         rsi_up = rsi.gt(rsi.shift())
@@ -89,9 +81,13 @@ class MTFVWAPSingleCloudMAStrategy(Strategy):
         intraday_call_open = avwap_uptrend & (ma_up & ~ma_up.shift().fillna(False))
         intraday_put_open = avwap_dntrend & (ma_dn & ~ma_dn.shift().fillna(False))
 
-        longCondition = (buy_call_open | intraday_call_open) & use_rsi_cond[self.use_rsi][0]
+        longCondition = (buy_call_open | intraday_call_open) & use_rsi_cond[
+            self.use_rsi
+        ][0]
 
-        shortCondition = (buy_put_open | intraday_put_open) & use_rsi_cond[self.use_rsi][1]
+        shortCondition = (buy_put_open | intraday_put_open) & use_rsi_cond[
+            self.use_rsi
+        ][1]
 
         if self.daytrade:
             in_session = pd.Series(

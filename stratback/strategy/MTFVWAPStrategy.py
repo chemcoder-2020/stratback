@@ -3,7 +3,7 @@ from stratback.backtesting.lib import crossover
 import numpy as np
 import pandas as pd
 import pandas_ta as pt
-from stratback.utils.TALibrary import vwap, price_position_by_pivots
+from stratback.utils.TALibrary import vwap, price_position_by_pivots, calc_vwap
 import datetime
 import re
 
@@ -38,13 +38,6 @@ class MTFVWAPStrategy(Strategy):
         data["day"] = pd.DatetimeIndex(data.index).date
         data["isFirstBar"] = data["day"].diff() >= "1 days"
 
-        def calc_vwap(df, tf):
-            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-                return (df.ta.hlc3() * df.Volume).groupby(
-                    df.index.floor(tf)
-                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-            else:
-                return df.ta.vwap(anchor=tf)
 
         rsi = pt.rsi(data.ta.hlc3(), 10)
         rsi_up = rsi.gt(rsi.shift())
@@ -161,14 +154,6 @@ class MTFVWAPStrategy(Strategy):
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M"))
         self.close = self.I(lambda x: x, self.data.Close, plot=False)
-
-        def calc_vwap(df, tf):
-            if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-                return (df.ta.hlc3() * df.Volume).groupby(
-                    df.index.floor(tf)
-                ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-            else:
-                return df.ta.vwap(anchor=tf)
 
         self.vwap_htf1 = self.I(calc_vwap, self.data.df, self.HTF1, overlay=True)
         self.vwap_htf2 = self.I(calc_vwap, self.data.df, self.HTF2, overlay=True)
