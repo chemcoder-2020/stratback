@@ -501,7 +501,7 @@ def calc_vwap(df, tf):
         group = (df.index - pd.Timedelta(first_time)).floor(tf) + pd.Timedelta(
             first_time
         )
-        return (df.ta.hlc3() * df.volume).groupby(group).cumsum() / df.volume.groupby(
+        return (df.ta.hlc3() * df.Volume).groupby(group).cumsum() / df.Volume.groupby(
             group
         ).cumsum()
     else:
