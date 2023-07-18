@@ -495,6 +495,19 @@ def price_position_by_pivots(
         return price_position
 
 
+def calc_vwap(df, tf):
+    if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
+        first_time = df.index.unique().time[0].strftime("%H:%M:%S")
+        group = (df.index - pd.Timedelta(first_time)).floor(tf) + pd.Timedelta(
+            first_time
+        )
+        return (df.ta.hlc3() * df.volume).groupby(group).cumsum() / df.volume.groupby(
+            group
+        ).cumsum()
+    else:
+        return df.ta.vwap(anchor=tf)
+
+
 def MTFVWAP(
     data,
     HTF1="D",
@@ -516,14 +529,6 @@ def MTFVWAP(
         data.set_index("date", inplace=True)
     data["day"] = pd.DatetimeIndex(data.index).date
     data["isFirstBar"] = data["day"].diff() >= "1 days"
-
-    def calc_vwap(df, tf):
-        if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-            return (df.ta.hlc3() * df.Volume).groupby(
-                df.index.floor(tf)
-            ).cumsum() / df.Volume.groupby(df.index.floor(tf)).cumsum()
-        else:
-            return df.ta.vwap(anchor=tf)
 
     rsi = pt.rsi(data.ta.hlc3(), 10)
     rsi_up = rsi.gt(rsi.shift())
@@ -658,14 +663,6 @@ def vwapbounce_signal(
     data["day"] = pd.DatetimeIndex(data.index).date
     data["isFirstBar"] = data["day"].diff() >= "1 days"
 
-    def calc_vwap(df, tf):
-        if re.split(r"\d", tf)[-1] in ["H", "min"] or re.split(r"\D", tf)[0] != "":
-            return (df.ta.hlc3() * df.volume).groupby(
-                df.index.floor(tf)
-            ).cumsum() / df.volume.groupby(df.index.floor(tf)).cumsum()
-        else:
-            return df.ta.vwap(anchor=tf)
-
     rsi = pt.rsi(data.ta.hlc3(), 10)
     rsi_up = rsi.gt(rsi.shift())
     use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
@@ -700,13 +697,10 @@ def vwapbounce_signal(
     entry_min_left = int(eval(entry_zone)[0].split(":")[1])
     entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
     entry_min_right = int(eval(entry_zone)[1].split(":")[1])
-    longCondition = (
-        (vwap_crossabove_htf1.eq(ntouch))
-        & use_rsi_cond[use_rsi][0]
-    )
+    longCondition = (vwap_crossabove_htf1.eq(ntouch)) & use_rsi_cond[use_rsi][0]
     if filter_by_secondary_timeframe:
         longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
-    
+
     if restrict_entry_zone:
         longCondition = longCondition & pd.Series(
             np.logical_and(
@@ -718,10 +712,7 @@ def vwapbounce_signal(
             index=data.index,
         )
 
-    shortCondition = (
-        (vwap_crossbelow_htf1.eq(ntouch))
-        & use_rsi_cond[use_rsi][1]
-    )
+    shortCondition = (vwap_crossbelow_htf1.eq(ntouch)) & use_rsi_cond[use_rsi][1]
     if filter_by_secondary_timeframe:
         shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
     if restrict_entry_zone:
