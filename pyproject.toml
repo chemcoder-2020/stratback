@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "stratback"
-version = "0.1.4.6"
+version = "0.1.5"
 authors = [
   { name="Huy Nguyen", email="huynguyen2406@gmail.com" },
 ]
