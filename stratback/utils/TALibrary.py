@@ -510,6 +510,42 @@ def calc_vwap(df, tf):
         return df.ta.vwap(anchor=tf)
 
 
+def crossabove(data, line, tf, consider_wicks=False):
+    data = data.copy()
+    data.columns = data.columns.str.lower()
+    if "date" in data.columns:
+        data.set_index("date", inplace=True)
+    # first_time = data.index.unique().time[0].strftime("%H:%M:%S")
+    # group = (data.index - pd.Timedelta(first_time) + pd.Timedelta("30T")).floor(tf) + pd.Timedelta(first_time) -pd.Timedelta("30T")
+    group = data.index.floor(tf)
+    if consider_wicks:
+        crossabove = (data.close.gt(line) & data.open.lt(line)) | (
+            data.open.gt(line) & data.close.gt(line) & data.low.lt(line)
+        )
+    else:
+        crossabove = data.close.gt(line) & data.open.lt(line)
+    crossabove = crossabove.groupby(group).cumsum()
+    return crossabove
+
+
+def crossbelow(data, line, tf, consider_wicks=False):
+    data = data.copy()
+    data.columns = data.columns.str.lower()
+    if "date" in data.columns:
+        data.set_index("date", inplace=True)
+    # first_time = data.index.unique().time[0].strftime("%H:%M:%S")
+    # group = (data.index - pd.Timedelta(first_time) + pd.Timedelta("30T")).floor(tf) + pd.Timedelta(first_time) -pd.Timedelta("30T")
+    group = data.index.floor(tf)
+    if consider_wicks:
+        crossbelow = (data.close.lt(line) & data.open.gt(line)) | (
+            data.open.lt(line) & data.close.lt(line) & data.high.gt(line)
+        )
+    else:
+        crossbelow = data.close.lt(line) & data.open.gt(line)
+    crossbelow = crossbelow.groupby(group).cumsum()
+    return crossbelow
+
+
 def MTFVWAP(
     data,
     HTF1="D",
@@ -647,6 +683,7 @@ def vwapbounce_signal(
     data,
     HTF1="D",
     HTF2="W",
+    crossing_count_reset="1H",
     ntouch=2,
     entry_zone="('6:30', '7:30')",
     daytrade=True,
@@ -671,48 +708,20 @@ def vwapbounce_signal(
     rsi_up = rsi.gt(rsi.shift())
     use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
 
-    def vwap_crossabove(data, vwap_line, tf, consider_wicks=False):
-        if consider_wicks:
-            crossabove = (data.close.gt(vwap_line) & data.open.lt(vwap_line)) | (
-                data.open.gt(vwap_line)
-                & data.close.gt(vwap_line)
-                & data.low.lt(vwap_line)
-            )
-        else:
-            crossabove = data.close.gt(vwap_line) & data.open.lt(vwap_line)
-        crossabove = crossabove.groupby(crossabove.index.to_period(tf)).cumsum()
-        return crossabove
-
-    def vwap_crossbelow(data, vwap_line, tf, consider_wicks=False):
-        if consider_wicks:
-            crossbelow = (data.close.lt(vwap_line) & data.open.gt(vwap_line)) | (
-                data.open.lt(vwap_line)
-                & data.close.lt(vwap_line)
-                & data.high.gt(vwap_line)
-            )
-        else:
-            crossbelow = data.close.lt(vwap_line) & data.open.gt(vwap_line)
-        crossbelow = crossbelow.groupby(crossbelow.index.to_period(tf)).cumsum()
-        return crossbelow
-
     avwap_htf1 = calc_vwap(data, HTF1)
-    vwap_crossabove_htf1 = vwap_crossabove(
-        data, avwap_htf1, HTF1, consider_wicks=consider_wicks
+    vwap_crossabove_htf1 = crossabove(
+        data, avwap_htf1, crossing_count_reset, consider_wicks=consider_wicks
     )
 
-    vwap_crossbelow_htf1 = vwap_crossbelow(
-        data, avwap_htf1, HTF1, consider_wicks=consider_wicks
+    vwap_crossbelow_htf1 = crossbelow(
+        data, avwap_htf1, crossing_count_reset, consider_wicks=consider_wicks
     )
 
     avwap_htf2 = calc_vwap(data, HTF2)
 
     if price_move_tp is not None:
-        price_position = price_position_by_pivots(
-            data, pivot_data_shift=pivot_shift
-        )
-        pexp = price_position.groupby(
-            price_position.index.to_period(HTF1)
-        ).expanding()
+        price_position = price_position_by_pivots(data, pivot_data_shift=pivot_shift)
+        pexp = price_position.groupby(price_position.index.to_period(HTF1)).expanding()
         price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
         price_move = price_move.droplevel(0)
 
@@ -721,9 +730,9 @@ def vwapbounce_signal(
     entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
     entry_min_right = int(eval(entry_zone)[1].split(":")[1])
 
-    longCondition = (vwap_crossabove_htf1.eq(ntouch) & vwap_crossabove_htf1.shift().ne(ntouch)) & use_rsi_cond[
-        use_rsi
-    ][0]
+    longCondition = (
+        vwap_crossabove_htf1.eq(ntouch) & vwap_crossabove_htf1.shift().ne(ntouch)
+    ) & use_rsi_cond[use_rsi][0]
     if filter_by_secondary_timeframe:
         longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
 
@@ -738,9 +747,9 @@ def vwapbounce_signal(
             index=data.index,
         )
 
-    shortCondition = (vwap_crossbelow_htf1.eq(ntouch) & vwap_crossbelow_htf1.shift().ne(ntouch)) & use_rsi_cond[
-        use_rsi
-    ][1]
+    shortCondition = (
+        vwap_crossbelow_htf1.eq(ntouch) & vwap_crossbelow_htf1.shift().ne(ntouch)
+    ) & use_rsi_cond[use_rsi][1]
     if filter_by_secondary_timeframe:
         shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
     if restrict_entry_zone:
@@ -774,14 +783,12 @@ def vwapbounce_signal(
     short = in_session & shortCondition & (not long_only)
 
     longX = (
-        price_move.eq(price_move_tp)
-        & price_move.shift().ne(price_move_tp)
+        price_move.eq(price_move_tp) & price_move.shift().ne(price_move_tp)
         if price_move_tp is not None
         else pd.Series([False] * len(data), index=data.index)
     )
     shortX = (
-        price_move.eq(-price_move_tp)
-        & price_move.shift().ne(-price_move_tp)
+        price_move.eq(-price_move_tp) & price_move.shift().ne(-price_move_tp)
         if price_move_tp is not None
         else pd.Series([False] * len(data), index=data.index)
     )

@@ -3,7 +3,7 @@ from stratback.backtesting.lib import crossover
 import numpy as np
 import pandas as pd
 import pandas_ta as pt
-from stratback.utils.TALibrary import vwap, price_position_by_pivots, calc_vwap
+from stratback.utils.TALibrary import vwap, price_position_by_pivots, calc_vwap, crossabove, crossbelow
 import datetime
 import re
 
@@ -12,6 +12,7 @@ class VWAPBounceStrategy(Strategy):
     HTF1 = "D"
     HTF2 = "W"
     ntouch = 2
+    crossing_count_reset = "1H"
     entry_zone = "('6:30', '7:30')"
     size = None
     long_only = True
@@ -44,37 +45,13 @@ class VWAPBounceStrategy(Strategy):
         rsi_up = rsi.gt(rsi.shift())
         use_rsi_cond = {True: (rsi_up, ~rsi_up), False: (True, True)}
 
-        def vwap_crossabove(data, vwap_line, tf, consider_wicks=False):
-            if consider_wicks:
-                crossabove = (data.Close.gt(vwap_line) & data.Open.lt(vwap_line)) | (
-                    data.Open.gt(vwap_line)
-                    & data.Close.gt(vwap_line)
-                    & data.Low.lt(vwap_line)
-                )
-            else:
-                crossabove = data.Close.gt(vwap_line) & data.Open.lt(vwap_line)
-            crossabove = crossabove.groupby(crossabove.index.to_period(tf)).cumsum()
-            return crossabove
-
-        def vwap_crossbelow(data, vwap_line, tf, consider_wicks=False):
-            if consider_wicks:
-                crossbelow = (data.Close.lt(vwap_line) & data.Open.gt(vwap_line)) | (
-                    data.Open.lt(vwap_line)
-                    & data.Close.lt(vwap_line)
-                    & data.High.gt(vwap_line)
-                )
-            else:
-                crossbelow = data.Close.lt(vwap_line) & data.Open.gt(vwap_line)
-            crossbelow = crossbelow.groupby(crossbelow.index.to_period(tf)).cumsum()
-            return crossbelow
-
         avwap_htf1 = calc_vwap(data, self.HTF1)
-        vwap_crossabove_htf1 = vwap_crossabove(
-            data, avwap_htf1, self.HTF1, consider_wicks=self.consider_wicks
+        vwap_crossabove_htf1 = crossabove(
+            data, avwap_htf1, self.crossing_count_reset, consider_wicks=self.consider_wicks
         )
 
-        vwap_crossbelow_htf1 = vwap_crossbelow(
-            data, avwap_htf1, self.HTF1, consider_wicks=self.consider_wicks
+        vwap_crossbelow_htf1 = crossbelow(
+            data, avwap_htf1, self.crossing_count_reset, consider_wicks=self.consider_wicks
         )
 
         avwap_htf2 = calc_vwap(data, self.HTF2)
