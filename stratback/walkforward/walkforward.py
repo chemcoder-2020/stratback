@@ -57,7 +57,18 @@ class WalkforwardOptimization:
             ),
         )
 
-    def backtest(data, strategy, plot_bt=False, commission=0.000, cash=30000, **kwargs):
+    def backtest(
+        data,
+        strategy,
+        plot_bt=False,
+        commission=0.000,
+        cash=30000,
+        exclusive_order=True,
+        hedging=False,
+        trade_on_close=False,
+        margin=1,
+        **kwargs,
+    ):
         data = data.copy()
         data.columns = data.columns.str.capitalize()
         try:
@@ -70,7 +81,10 @@ class WalkforwardOptimization:
             strategy,
             cash=cash,
             commission=commission,
-            exclusive_orders=kwargs.get("exclusive_orders", True),
+            exclusive_orders=exclusive_order,
+            hedging=hedging,
+            trade_on_close=trade_on_close,
+            margin=margin,
         )
         output = bt.run(**kwargs)
 
@@ -284,8 +298,10 @@ class WalkforwardOptimization:
                 assert (
                     len(self.in_sample_data["day"].unique()) == self.lookback
                 ), f"in-sample data not equal to lookback {self.lookback}"
-            else: # expanding window mode
-                self.in_sample_data = self.data[self.data.day.lt(self.days[-j])].reset_index()  # Update in_sample_data for optim
+            else:  # expanding window mode
+                self.in_sample_data = self.data[
+                    self.data.day.lt(self.days[-j])
+                ].reset_index()  # Update in_sample_data for optim
 
             if i == self.walk_length + self.lookback:
                 objective = objective_generator(
