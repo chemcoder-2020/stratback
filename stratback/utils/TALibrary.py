@@ -748,8 +748,10 @@ def vwapbounce_signal(
         )
 
     shortCondition = (
-        vwap_crossbelow_htf1.eq(ntouch) & vwap_crossbelow_htf1.shift().ne(ntouch)
-    ) & use_rsi_cond[use_rsi][1]
+        avwap_htf1.lt(avwap_htf2)
+        & avwap_htf1.shift().ge(avwap_htf2.shift())
+        & use_rsi_cond[use_rsi][1]
+    )
     if filter_by_secondary_timeframe:
         shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
     if restrict_entry_zone:
