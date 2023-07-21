@@ -3,9 +3,8 @@ from stratback.backtesting.lib import crossover
 import numpy as np
 import pandas as pd
 import pandas_ta as pt
-from stratback.utils.TALibrary import vwap, price_position_by_pivots, calc_vwap, crossabove, crossbelow
+from stratback.utils.TALibrary import price_position_by_pivots, calc_vwap, crossabove, crossbelow
 import datetime
-import re
 
 
 class VWAPBounceStrategy(Strategy):
@@ -31,8 +30,6 @@ class VWAPBounceStrategy(Strategy):
     def vwapbounce_signal(
         self,
         data,
-        long_only=False,
-        short_only=False,
     ):
         data = data.copy()
 
@@ -88,7 +85,7 @@ class VWAPBounceStrategy(Strategy):
                 index=data.index,
             )
 
-        shortCondition = (vwap_crossbelow_htf1.eq(self.ntouch) & vwap_crossbelow_htf1.ne(self.ntouch)) & use_rsi_cond[
+        shortCondition = avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift()) & use_rsi_cond[
             self.use_rsi
         ][1]
         if self.filter_by_secondary_timeframe:
@@ -120,8 +117,8 @@ class VWAPBounceStrategy(Strategy):
                 ),
             )
 
-        long = in_session & longCondition & (not short_only)
-        short = in_session & shortCondition & (not long_only)
+        long = in_session & longCondition & (not self.short_only)
+        short = in_session & shortCondition & (not self.long_only)
 
         longX = (
             price_move.eq(self.price_move_tp)
@@ -135,7 +132,6 @@ class VWAPBounceStrategy(Strategy):
             if self.price_move_tp is not None
             else pd.Series([False] * len(data), index=data.index)
         )
-        # print(longX)
 
         if self.daytrade:
             eod = pd.DatetimeIndex(data.index).time >= datetime.time(12, 25)
@@ -160,8 +156,6 @@ class VWAPBounceStrategy(Strategy):
         ) = self.I(
             self.vwapbounce_signal,
             self.data.df,
-            long_only=self.long_only,
-            short_only=self.short_only,
             plot=False,
         )
         self.in_session = self.I(
@@ -178,6 +172,9 @@ class VWAPBounceStrategy(Strategy):
         self._signals = pd.Series(index=self.data.df.index, dtype=int)
         self.bars = np.unique(self.data.df.index.strftime("%H:%M"))
         self.close = self.I(lambda x: x, self.data.Close, plot=False)
+        self.open = self.I(lambda x: x, self.data.Open, plot=False)
+        self.low = self.I(lambda x: x, self.data.Low, plot=False)
+        self.high = self.I(lambda x: x, self.data.High, plot=False)
 
         self.vwap_htf1 = self.I(calc_vwap, self.data.df, self.HTF1, overlay=True)
         self.vwap_htf2 = self.I(calc_vwap, self.data.df, self.HTF2, overlay=True)
