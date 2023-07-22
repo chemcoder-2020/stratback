@@ -386,7 +386,7 @@ def ma_double_cloud_signal(
 
 
 def price_position_by_pivots(
-    data, secondary_tf="D", pivot_data_shift=78, return_nearest_levels=False
+    data, secondary_tf="D", pivot_data_shift=78, return_nearest_levels=False, return_all_levels=False
 ):
     data = data.copy().reset_index()
     data.columns = data.columns.str.lower()
@@ -491,6 +491,8 @@ def price_position_by_pivots(
 
     if return_nearest_levels:
         return price_position, nearest_levels
+    elif return_all_levels:
+        return price_position, levels
     else:
         return price_position
 
