@@ -13,6 +13,8 @@ class VWAPBounceStrategy(Strategy):
     ntouch = 2
     crossing_count_reset = "1H"
     entry_zone = "('6:30', '7:30')"
+    sod_time = "6:30"
+    eod_time = "12:25"
     size = None
     long_only = True
     short_only = False
@@ -104,8 +106,8 @@ class VWAPBounceStrategy(Strategy):
         if self.daytrade:
             in_session = pd.Series(
                 np.logical_and(
-                    pd.DatetimeIndex(data.index).time < datetime.time(12, 25),
-                    pd.DatetimeIndex(data.index).time >= datetime.time(6, 30),
+                    pd.DatetimeIndex(data.index).time < datetime.time(int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1])),
+                    pd.DatetimeIndex(data.index).time >= datetime.time(int(self.sod_time.split(":")[0]), int(self.sod_time.split(":")[1])),
                 ),
                 index=data.index,
             )
@@ -134,7 +136,7 @@ class VWAPBounceStrategy(Strategy):
         )
 
         if self.daytrade:
-            eod = pd.DatetimeIndex(data.index).time >= datetime.time(12, 25)
+            eod = pd.DatetimeIndex(data.index).time >= datetime.time(int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1]))
         else:
             eod = (
                 pd.Series(
@@ -162,8 +164,8 @@ class VWAPBounceStrategy(Strategy):
             lambda x: x,
             pd.Series(
                 np.logical_and(
-                    pd.DatetimeIndex(self.data.df.index).time < datetime.time(12, 25),
-                    pd.DatetimeIndex(self.data.df.index).time >= datetime.time(6, 30),
+                    pd.DatetimeIndex(self.data.df.index).time < datetime.time(int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1])),
+                    pd.DatetimeIndex(self.data.df.index).time >= datetime.time(int(self.sod_time.split(":")[0]), int(self.sod_time.split(":")[1])),
                 ),
                 index=self.data.df.index,
             ),
