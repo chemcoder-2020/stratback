@@ -688,6 +688,8 @@ def vwapbounce_signal(
     crossing_count_reset="1H",
     ntouch=2,
     entry_zone="('6:30', '7:30')",
+    sod_time = "6:30",
+    eod_time = "12:50",
     daytrade=True,
     use_rsi=False,
     pivot_shift=78,
@@ -770,8 +772,8 @@ def vwapbounce_signal(
     if daytrade:
         in_session = pd.Series(
             np.logical_and(
-                pd.DatetimeIndex(data.index).time < datetime.time(12, 25),
-                pd.DatetimeIndex(data.index).time >= datetime.time(6, 30),
+                pd.DatetimeIndex(data.index).time < datetime.time(int(eod_time.split(":")[0]), int(eod_time.split(":")[1])),
+                pd.DatetimeIndex(data.index).time >= datetime.time(int(sod_time.split(":")[0]), int(sod_time.split(":")[1])),
             ),
             index=data.index,
         )
@@ -805,8 +807,8 @@ def vwapbounce_signal(
     signal["Short"] = short
     signal["ShortX"] = shortX
     signal["RSI"] = rsi
-    signal["EOD"] = (pd.DatetimeIndex(signal.index).time >= datetime.time(12, 25)) & (
-        pd.DatetimeIndex(signal.index).time <= datetime.time(12, 55)
+    signal["EOD"] = (pd.DatetimeIndex(signal.index).time >= datetime.time(int(eod_time.split(":")[0]), int(eod_time.split(":")[1]))) & (
+        pd.DatetimeIndex(signal.index).time <= datetime.time(13, 0)
     )
     if shift:
         return signal.shift()
