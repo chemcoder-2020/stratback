@@ -371,10 +371,14 @@ class WalkforwardOptimization:
                     backtest_params = self.strategy_kwargs.copy()
 
                     for k, v in best_params.items():
-                        if int(v) == float(v):
-                            backtest_params[k] = v
-                        else:
-                            backtest_params[k] = np.floor(v * 1000) / 1000
+                        try:
+                            if int(v) == float(v):
+                                backtest_params[k] = v
+                            else:
+                                backtest_params[k] = np.floor(v * 1000) / 1000
+                        except Exception:
+                            print(e)
+                            
 
                     print(best_params)
                     print(backtest_params)
