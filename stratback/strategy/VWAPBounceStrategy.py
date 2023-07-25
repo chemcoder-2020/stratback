@@ -12,6 +12,7 @@ class VWAPBounceStrategy(Strategy):
     HTF2 = "W"
     ntouch = 2
     crossing_count_reset = "1H"
+    rolling_tf = False
     entry_zone = "('6:30', '7:30')"
     sod_time = "6:30"
     eod_time = "12:25"
@@ -46,11 +47,7 @@ class VWAPBounceStrategy(Strategy):
 
         avwap_htf1 = calc_vwap(data, self.HTF1)
         vwap_crossabove_htf1 = crossabove(
-            data, avwap_htf1, self.crossing_count_reset, consider_wicks=self.consider_wicks
-        )
-
-        vwap_crossbelow_htf1 = crossbelow(
-            data, avwap_htf1, self.crossing_count_reset, consider_wicks=self.consider_wicks
+            data, avwap_htf1, self.crossing_count_reset, consider_wicks=self.consider_wicks, rolling_tf=self.rolling_tf
         )
 
         avwap_htf2 = calc_vwap(data, self.HTF2)

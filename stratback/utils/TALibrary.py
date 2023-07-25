@@ -386,7 +386,11 @@ def ma_double_cloud_signal(
 
 
 def price_position_by_pivots(
-    data, secondary_tf="D", pivot_data_shift=78, return_nearest_levels=False, return_all_levels=False
+    data,
+    secondary_tf="D",
+    pivot_data_shift=78,
+    return_nearest_levels=False,
+    return_all_levels=False,
 ):
     data = data.copy().reset_index()
     data.columns = data.columns.str.lower()
@@ -512,39 +516,42 @@ def calc_vwap(df, tf):
         return df.ta.vwap(anchor=tf)
 
 
-def crossabove(data, line, tf, consider_wicks=False):
+def crossabove(data, line, tf, consider_wicks=False, rolling_tf=False):
     data = data.copy()
     data.columns = data.columns.str.lower()
     if "date" in data.columns:
         data.set_index("date", inplace=True)
-    # first_time = data.index.unique().time[0].strftime("%H:%M:%S")
-    # group = (data.index - pd.Timedelta(first_time) + pd.Timedelta("30T")).floor(tf) + pd.Timedelta(first_time) -pd.Timedelta("30T")
-    group = data.index.floor(tf)
+
     if consider_wicks:
         crossabove = (data.close.gt(line) & data.open.lt(line)) | (
             data.open.gt(line) & data.close.gt(line) & data.low.lt(line)
         )
     else:
         crossabove = data.close.gt(line) & data.open.lt(line)
-    crossabove = crossabove.groupby(group).cumsum()
+    if rolling_tf:
+        crossabove = crossabove.rolling(tf).sum()
+    else:
+        group = data.index.floor(tf)
+        crossabove = crossabove.groupby(group).cumsum()
     return crossabove
 
 
-def crossbelow(data, line, tf, consider_wicks=False):
+def crossbelow(data, line, tf, consider_wicks=False, rolling_tf=False):
     data = data.copy()
     data.columns = data.columns.str.lower()
     if "date" in data.columns:
         data.set_index("date", inplace=True)
-    # first_time = data.index.unique().time[0].strftime("%H:%M:%S")
-    # group = (data.index - pd.Timedelta(first_time) + pd.Timedelta("30T")).floor(tf) + pd.Timedelta(first_time) -pd.Timedelta("30T")
-    group = data.index.floor(tf)
     if consider_wicks:
         crossbelow = (data.close.lt(line) & data.open.gt(line)) | (
             data.open.lt(line) & data.close.lt(line) & data.high.gt(line)
         )
     else:
         crossbelow = data.close.lt(line) & data.open.gt(line)
-    crossbelow = crossbelow.groupby(group).cumsum()
+    if rolling_tf:
+        crossbelow = crossbelow.rolling(tf).sum()
+    else:
+        group = data.index.floor(tf)
+        crossbelow = crossbelow.groupby(group).cumsum()
     return crossbelow
 
 
@@ -688,8 +695,8 @@ def vwapbounce_signal(
     crossing_count_reset="1H",
     ntouch=2,
     entry_zone="('6:30', '7:30')",
-    sod_time = "6:30",
-    eod_time = "12:50",
+    sod_time="6:30",
+    eod_time="12:50",
     daytrade=True,
     use_rsi=False,
     pivot_shift=78,
@@ -700,6 +707,7 @@ def vwapbounce_signal(
     restrict_entry_zone=False,
     filter_by_secondary_timeframe=False,
     consider_wicks=False,
+    rolling_tf=False,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
@@ -714,11 +722,11 @@ def vwapbounce_signal(
 
     avwap_htf1 = calc_vwap(data, HTF1)
     vwap_crossabove_htf1 = crossabove(
-        data, avwap_htf1, crossing_count_reset, consider_wicks=consider_wicks
-    )
-
-    vwap_crossbelow_htf1 = crossbelow(
-        data, avwap_htf1, crossing_count_reset, consider_wicks=consider_wicks
+        data,
+        avwap_htf1,
+        crossing_count_reset,
+        consider_wicks=consider_wicks,
+        rolling_tf=rolling_tf,
     )
 
     avwap_htf2 = calc_vwap(data, HTF2)
@@ -772,8 +780,14 @@ def vwapbounce_signal(
     if daytrade:
         in_session = pd.Series(
             np.logical_and(
-                pd.DatetimeIndex(data.index).time < datetime.time(int(eod_time.split(":")[0]), int(eod_time.split(":")[1])),
-                pd.DatetimeIndex(data.index).time >= datetime.time(int(sod_time.split(":")[0]), int(sod_time.split(":")[1])),
+                pd.DatetimeIndex(data.index).time
+                < datetime.time(
+                    int(eod_time.split(":")[0]), int(eod_time.split(":")[1])
+                ),
+                pd.DatetimeIndex(data.index).time
+                >= datetime.time(
+                    int(sod_time.split(":")[0]), int(sod_time.split(":")[1])
+                ),
             ),
             index=data.index,
         )
@@ -807,9 +821,10 @@ def vwapbounce_signal(
     signal["Short"] = short
     signal["ShortX"] = shortX
     signal["RSI"] = rsi
-    signal["EOD"] = (pd.DatetimeIndex(signal.index).time >= datetime.time(int(eod_time.split(":")[0]), int(eod_time.split(":")[1]))) & (
-        pd.DatetimeIndex(signal.index).time <= datetime.time(13, 0)
-    )
+    signal["EOD"] = (
+        pd.DatetimeIndex(signal.index).time
+        >= datetime.time(int(eod_time.split(":")[0]), int(eod_time.split(":")[1]))
+    ) & (pd.DatetimeIndex(signal.index).time <= datetime.time(13, 0))
     if shift:
         return signal.shift()
     else:
