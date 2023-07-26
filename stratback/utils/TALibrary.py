@@ -398,7 +398,11 @@ def price_position_by_pivots(
         data = data.set_index("date")
     pivot_data = data.shift(pivot_data_shift)
 
-    high = pivot_data.high.groupby(pivot_data.index.to_period(secondary_tf)).max().shift(pivot_data_shift)
+    high = (
+        pivot_data.high.groupby(pivot_data.index.to_period(secondary_tf))
+        .max()
+        .shift(pivot_data_shift)
+    )
     high.index = (
         pd.Series(pivot_data.index)
         .groupby(pivot_data.index.to_period(secondary_tf))
@@ -406,14 +410,22 @@ def price_position_by_pivots(
     )
     high = pivot_data.align(high, axis=0)[1].bfill()
 
-    low = pivot_data.low.groupby(pivot_data.index.to_period(secondary_tf)).min().shift(pivot_data_shift)
+    low = (
+        pivot_data.low.groupby(pivot_data.index.to_period(secondary_tf))
+        .min()
+        .shift(pivot_data_shift)
+    )
     low.index = (
         pd.Series(pivot_data.index)
         .groupby(pivot_data.index.to_period(secondary_tf))
         .last()
     )
     low = pivot_data.align(low, axis=0)[1].bfill()
-    close = pivot_data.close.groupby(pivot_data.index.to_period(secondary_tf)).last().shift(1)
+    close = (
+        pivot_data.close.groupby(pivot_data.index.to_period(secondary_tf))
+        .last()
+        .shift(1)
+    )
     close.index = (
         pd.Series(pivot_data.index)
         .groupby(pivot_data.index.to_period(secondary_tf))
@@ -498,6 +510,52 @@ def price_position_by_pivots(
         return price_position, levels
     else:
         return price_position
+
+
+def dailySpreadProbabilityBrackets(data):
+    price_position, levels = price_position_by_pivots(
+        data, "W", return_all_levels=True, pivot_data_shift=1
+    )
+    p5 = data.close.between(levels[11], levels[12])
+    p4 = data.close.between(levels[10], levels[11])
+    p3 = data.close.between(levels[9], levels[10])
+    p2 = data.close.between(levels[8], levels[9])
+    p1 = data.close.between(levels[7], levels[8])
+    p0 = data.close.between(levels[6], levels[7])
+    p_1 = data.close.between(levels[5], levels[6])
+    p_2 = data.close.between(levels[4], levels[5])
+    p_3 = data.close.between(levels[3], levels[4])
+    p_4 = data.close.between(levels[2], levels[3])
+    p_5 = data.close.between(levels[1], levels[2])
+    p_6 = data.close.between(levels[0], levels[1])
+
+    close_pp = pd.concat(
+        [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
+    ).apply(np.argmax, axis=1)
+
+    p5 = data.open.between(levels[11], levels[12])
+    p4 = data.open.between(levels[10], levels[11])
+    p3 = data.open.between(levels[9], levels[10])
+    p2 = data.open.between(levels[8], levels[9])
+    p1 = data.open.between(levels[7], levels[8])
+    p0 = data.open.between(levels[6], levels[7])
+    p_1 = data.open.between(levels[5], levels[6])
+    p_2 = data.open.between(levels[4], levels[5])
+    p_3 = data.open.between(levels[3], levels[4])
+    p_4 = data.open.between(levels[2], levels[3])
+    p_5 = data.open.between(levels[1], levels[2])
+    p_6 = data.open.between(levels[0], levels[1])
+
+    open_pp = pd.concat(
+        [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
+    ).apply(np.argmax, axis=1)
+
+    mapping = {"0":"S6", "1":"S5","2":"S4","3":"S3","4":"S2","5":"S1","6":"P","7":"R1","8":"R2","9":"R3","10":"R4","11":"R5"}
+    df = pd.DataFrame({"from": open_pp, "to": close_pp})
+
+    df2 = df.groupby("from")["to"].value_counts(normalize=True)  # .loc[7]
+    out = df2.reset_index().astype({"from": str, "to": str}).replace(mapping)
+    return out
 
 
 def calc_vwap(df, tf):
