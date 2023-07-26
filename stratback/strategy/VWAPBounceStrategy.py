@@ -24,7 +24,7 @@ class VWAPBounceStrategy(Strategy):
     limit_pct = None
     stop_pct = None
     use_rsi = False
-    pivot_shift = 78
+    pivot_shift = 1
     price_move_tp = None
     restrict_entry_zone = True
     filter_by_secondary_timeframe = True

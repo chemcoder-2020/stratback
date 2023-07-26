@@ -22,7 +22,7 @@ class MTFVWAPStrategy(Strategy):
     stop_pct = None
     use_rsi = False
     use_avwap_cross = True
-    pivot_shift = 78
+    pivot_shift = 1
     price_move_tp = None
 
     def mtfvwap_signal(

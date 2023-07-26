@@ -388,7 +388,7 @@ def ma_double_cloud_signal(
 def price_position_by_pivots(
     data,
     secondary_tf="D",
-    pivot_data_shift=78,
+    pivot_data_shift=1,
     return_nearest_levels=False,
     return_all_levels=False,
 ):
@@ -398,7 +398,7 @@ def price_position_by_pivots(
         data = data.set_index("date")
     pivot_data = data.shift(pivot_data_shift)
 
-    high = pivot_data.high.groupby(pivot_data.index.to_period(secondary_tf)).max()
+    high = pivot_data.high.groupby(pivot_data.index.to_period(secondary_tf)).max().shift(pivot_data_shift)
     high.index = (
         pd.Series(pivot_data.index)
         .groupby(pivot_data.index.to_period(secondary_tf))
@@ -406,15 +406,14 @@ def price_position_by_pivots(
     )
     high = pivot_data.align(high, axis=0)[1].bfill()
 
-    low = pivot_data.low.groupby(pivot_data.index.to_period(secondary_tf)).min()
+    low = pivot_data.low.groupby(pivot_data.index.to_period(secondary_tf)).min().shift(pivot_data_shift)
     low.index = (
         pd.Series(pivot_data.index)
         .groupby(pivot_data.index.to_period(secondary_tf))
         .last()
     )
     low = pivot_data.align(low, axis=0)[1].bfill()
-
-    close = pivot_data.close.groupby(pivot_data.index.to_period(secondary_tf)).last()
+    close = pivot_data.close.groupby(pivot_data.index.to_period(secondary_tf)).last().shift(1)
     close.index = (
         pd.Series(pivot_data.index)
         .groupby(pivot_data.index.to_period(secondary_tf))
