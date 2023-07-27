@@ -512,9 +512,9 @@ def price_position_by_pivots(
         return price_position
 
 
-def dailySpreadProbabilityBrackets(data):
+def dailySpreadProbabilityBrackets(data, pivot_tf="W", pivot_data_shift=1):
     price_position, levels = price_position_by_pivots(
-        data, "W", return_all_levels=True, pivot_data_shift=1
+        data, pivot_tf, return_all_levels=True, pivot_data_shift=pivot_data_shift
     )
     p5 = data.close.between(levels[11], levels[12])
     p4 = data.close.between(levels[10], levels[11])
