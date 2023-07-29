@@ -765,6 +765,8 @@ def vwapbounce_signal(
     filter_by_secondary_timeframe=False,
     consider_wicks=False,
     rolling_tf=False,
+    support_rejection=False,
+    resistance_rejection=False,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
@@ -794,16 +796,40 @@ def vwapbounce_signal(
         price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
         price_move = price_move.droplevel(0)
 
+    _, weekly_nearest_levels = price_position_by_pivots(
+        data, secondary_tf=HTF2, return_nearest_levels=True
+    )
+    R_nreject = crossbelow(
+        data,
+        weekly_nearest_levels["R"],
+        crossing_count_reset,
+        rolling_tf=rolling_tf,
+    )
+    S_nreject = crossabove(
+        data,
+        weekly_nearest_levels["S"],
+        crossing_count_reset,
+        rolling_tf=rolling_tf,
+    )
     entry_hr_left = int(eval(entry_zone)[0].split(":")[0])
     entry_min_left = int(eval(entry_zone)[0].split(":")[1])
     entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
     entry_min_right = int(eval(entry_zone)[1].split(":")[1])
 
-    longCondition = (
-        vwap_crossabove_htf1.eq(ntouch) & vwap_crossabove_htf1.shift().ne(ntouch)
-    ) & use_rsi_cond[use_rsi][0]
-    if filter_by_secondary_timeframe:
-        longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
+    if support_rejection:
+        longCondition = (
+            (
+                vwap_crossabove_htf1.eq(ntouch)
+                & vwap_crossabove_htf1.shift().eq(ntouch - 1)
+                & ~R_nreject.gt(0)
+            )
+            | S_nreject.gt(0)
+        ) & use_rsi_cond[use_rsi][0]
+    else:
+        longCondition = (
+            vwap_crossabove_htf1.eq(ntouch)
+            & vwap_crossabove_htf1.shift().eq(ntouch - 1)
+        ) & use_rsi_cond[use_rsi][0]
 
     if restrict_entry_zone:
         longCondition = longCondition & pd.Series(
@@ -816,11 +842,16 @@ def vwapbounce_signal(
             index=data.index,
         )
 
-    shortCondition = (
-        avwap_htf1.lt(avwap_htf2)
-        & avwap_htf1.shift().ge(avwap_htf2.shift())
-        & use_rsi_cond[use_rsi][1]
-    )
+    if resistance_rejection:
+        shortCondition = (
+            avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift())
+        ) & use_rsi_cond[use_rsi][1]
+    else:
+        shortCondition = (
+            avwap_htf1.lt(avwap_htf2)
+            & avwap_htf1.shift().ge(avwap_htf2.shift())
+            & use_rsi_cond[use_rsi][1]
+        )
     if filter_by_secondary_timeframe:
         shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
     if restrict_entry_zone:

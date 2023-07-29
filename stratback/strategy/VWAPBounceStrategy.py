@@ -3,7 +3,12 @@ from stratback.backtesting.lib import crossover
 import numpy as np
 import pandas as pd
 import pandas_ta as pt
-from stratback.utils.TALibrary import price_position_by_pivots, calc_vwap, crossabove, crossbelow
+from stratback.utils.TALibrary import (
+    price_position_by_pivots,
+    calc_vwap,
+    crossabove,
+    crossbelow,
+)
 import datetime
 
 
@@ -29,6 +34,8 @@ class VWAPBounceStrategy(Strategy):
     restrict_entry_zone = True
     filter_by_secondary_timeframe = True
     consider_wicks = False
+    support_rejection = False
+    resistance_rejection = False
 
     def vwapbounce_signal(
         self,
@@ -47,7 +54,11 @@ class VWAPBounceStrategy(Strategy):
 
         avwap_htf1 = calc_vwap(data, self.HTF1)
         vwap_crossabove_htf1 = crossabove(
-            data, avwap_htf1, self.crossing_count_reset, consider_wicks=self.consider_wicks, rolling_tf=self.rolling_tf
+            data,
+            avwap_htf1,
+            self.crossing_count_reset,
+            consider_wicks=self.consider_wicks,
+            rolling_tf=self.rolling_tf,
         )
 
         avwap_htf2 = calc_vwap(data, self.HTF2)
@@ -62,14 +73,41 @@ class VWAPBounceStrategy(Strategy):
             price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
             price_move = price_move.droplevel(0)
 
+        _, weekly_nearest_levels = price_position_by_pivots(
+            data, secondary_tf=self.HTF2, return_nearest_levels=True
+        )
+        R_nreject = crossbelow(
+            data,
+            weekly_nearest_levels["R"],
+            self.crossing_count_reset,
+            rolling_tf=self.rolling_tf,
+        )
+        S_nreject = crossabove(
+            data,
+            weekly_nearest_levels["S"],
+            self.crossing_count_reset,
+            rolling_tf=self.rolling_tf,
+        )
+
         entry_hr_left = int(eval(self.entry_zone)[0].split(":")[0])
         entry_min_left = int(eval(self.entry_zone)[0].split(":")[1])
         entry_hr_right = int(eval(self.entry_zone)[1].split(":")[0])
         entry_min_right = int(eval(self.entry_zone)[1].split(":")[1])
 
-        longCondition = (vwap_crossabove_htf1.eq(self.ntouch) & vwap_crossabove_htf1.shift().eq(self.ntouch-1)) & use_rsi_cond[
-            self.use_rsi
-        ][0]
+        if self.support_rejection:
+            longCondition = (
+                (
+                    vwap_crossabove_htf1.eq(self.ntouch)
+                    & vwap_crossabove_htf1.shift().eq(self.ntouch - 1)
+                    & ~R_nreject.gt(0)
+                )
+                | S_nreject.gt(0)
+            ) & use_rsi_cond[self.use_rsi][0]
+        else:
+            longCondition = (
+                vwap_crossabove_htf1.eq(self.ntouch)
+                & vwap_crossabove_htf1.shift().eq(self.ntouch - 1)
+            ) & use_rsi_cond[self.use_rsi][0]
         if self.filter_by_secondary_timeframe:
             longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
 
@@ -84,9 +122,16 @@ class VWAPBounceStrategy(Strategy):
                 index=data.index,
             )
 
-        shortCondition = avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift()) & use_rsi_cond[
-            self.use_rsi
-        ][1]
+        if self.resistance_rejection:
+            shortCondition = (
+                avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift())
+            ) & use_rsi_cond[self.use_rsi][1]
+        else:
+            shortCondition = (
+                avwap_htf1.lt(avwap_htf2)
+                & avwap_htf1.shift().ge(avwap_htf2.shift())
+                & use_rsi_cond[self.use_rsi][1]
+            )
         if self.filter_by_secondary_timeframe:
             shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
         if self.restrict_entry_zone:
@@ -103,8 +148,16 @@ class VWAPBounceStrategy(Strategy):
         if self.daytrade:
             in_session = pd.Series(
                 np.logical_and(
-                    pd.DatetimeIndex(data.index).time < datetime.time(int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1])),
-                    pd.DatetimeIndex(data.index).time >= datetime.time(int(self.sod_time.split(":")[0]), int(self.sod_time.split(":")[1])),
+                    pd.DatetimeIndex(data.index).time
+                    < datetime.time(
+                        int(self.eod_time.split(":")[0]),
+                        int(self.eod_time.split(":")[1]),
+                    ),
+                    pd.DatetimeIndex(data.index).time
+                    >= datetime.time(
+                        int(self.sod_time.split(":")[0]),
+                        int(self.sod_time.split(":")[1]),
+                    ),
                 ),
                 index=data.index,
             )
@@ -133,7 +186,9 @@ class VWAPBounceStrategy(Strategy):
         )
 
         if self.daytrade:
-            eod = pd.DatetimeIndex(data.index).time >= datetime.time(int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1]))
+            eod = pd.DatetimeIndex(data.index).time >= datetime.time(
+                int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1])
+            )
         else:
             eod = (
                 pd.Series(
@@ -161,8 +216,16 @@ class VWAPBounceStrategy(Strategy):
             lambda x: x,
             pd.Series(
                 np.logical_and(
-                    pd.DatetimeIndex(self.data.df.index).time < datetime.time(int(self.eod_time.split(":")[0]), int(self.eod_time.split(":")[1])),
-                    pd.DatetimeIndex(self.data.df.index).time >= datetime.time(int(self.sod_time.split(":")[0]), int(self.sod_time.split(":")[1])),
+                    pd.DatetimeIndex(self.data.df.index).time
+                    < datetime.time(
+                        int(self.eod_time.split(":")[0]),
+                        int(self.eod_time.split(":")[1]),
+                    ),
+                    pd.DatetimeIndex(self.data.df.index).time
+                    >= datetime.time(
+                        int(self.sod_time.split(":")[0]),
+                        int(self.sod_time.split(":")[1]),
+                    ),
                 ),
                 index=self.data.df.index,
             ),
