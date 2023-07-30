@@ -756,7 +756,7 @@ def vwapbounce_signal(
     eod_time="12:50",
     daytrade=True,
     use_rsi=False,
-    pivot_shift=78,
+    pivot_shift=1,
     price_move_tp=None,
     long_only=True,
     short_only=False,
