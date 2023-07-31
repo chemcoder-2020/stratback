@@ -550,7 +550,20 @@ def dailySpreadProbabilityBrackets(data, pivot_tf="W", pivot_data_shift=1):
         [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
     ).apply(np.argmax, axis=1)
 
-    mapping = {"0":"S6", "1":"S5","2":"S4","3":"S3","4":"S2","5":"S1","6":"P","7":"R1","8":"R2","9":"R3","10":"R4","11":"R5"}
+    mapping = {
+        "0": "S6",
+        "1": "S5",
+        "2": "S4",
+        "3": "S3",
+        "4": "S2",
+        "5": "S1",
+        "6": "P",
+        "7": "R1",
+        "8": "R2",
+        "9": "R3",
+        "10": "R4",
+        "11": "R5",
+    }
     df = pd.DataFrame({"from": open_pp, "to": close_pp})
 
     df2 = df.groupby("from")["to"].value_counts(normalize=True)  # .loc[7]
@@ -747,7 +760,7 @@ def intraday_dynamic_level_breaks(data, return_levels=False):
 
 def vwapbounce_signal(
     data,
-    HTF1="D",
+    HTF1="4H",
     HTF2="W",
     crossing_count_reset="1H",
     ntouch=2,
@@ -758,15 +771,16 @@ def vwapbounce_signal(
     use_rsi=False,
     pivot_shift=1,
     price_move_tp=None,
-    long_only=True,
+    long_only=False,
     short_only=False,
     shift=True,
     restrict_entry_zone=False,
     filter_by_secondary_timeframe=False,
     consider_wicks=False,
     rolling_tf=False,
-    support_rejection=False,
+    support_rejection=True,
     resistance_rejection=False,
+    ignore_vwap_crossabove=False,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
@@ -796,35 +810,50 @@ def vwapbounce_signal(
         price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
         price_move = price_move.droplevel(0)
 
-    _, weekly_nearest_levels = price_position_by_pivots(
-        data, secondary_tf=HTF2, return_nearest_levels=True
+    _, weekly_levels = price_position_by_pivots(
+        data, secondary_tf=HTF2, return_all_levels=True
     )
-    R_nreject = crossbelow(
-        data,
-        weekly_nearest_levels["R"],
-        crossing_count_reset,
-        rolling_tf=rolling_tf,
-    )
-    S_nreject = crossabove(
-        data,
-        weekly_nearest_levels["S"],
-        crossing_count_reset,
-        rolling_tf=rolling_tf,
-    )
+
+    R_nreject = pd.concat(
+        [
+            crossbelow(
+                data,
+                weekly_levels[label],
+                crossing_count_reset,
+                rolling_tf=rolling_tf,
+            )
+            for label in weekly_levels.columns
+        ],
+        axis=1,
+    ).sum(axis=1)
+    S_nreject = pd.concat(
+        [
+            crossabove(
+                data,
+                weekly_levels[label],
+                crossing_count_reset,
+                rolling_tf=rolling_tf,
+            )
+            for label in weekly_levels.columns
+        ],
+        axis=1,
+    ).sum(axis=1)
     entry_hr_left = int(eval(entry_zone)[0].split(":")[0])
     entry_min_left = int(eval(entry_zone)[0].split(":")[1])
     entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
     entry_min_right = int(eval(entry_zone)[1].split(":")[1])
 
     if support_rejection:
-        longCondition = (
-            (
-                vwap_crossabove_htf1.eq(ntouch)
-                & vwap_crossabove_htf1.shift().eq(ntouch - 1)
-                & ~R_nreject.gt(0)
-            )
-            | S_nreject.gt(0)
-        ) & use_rsi_cond[use_rsi][0]
+        if ignore_vwap_crossabove:
+            longCondition = (S_nreject.gt(0)) & use_rsi_cond[use_rsi][0]
+        else:
+            longCondition = (
+                (
+                    vwap_crossabove_htf1.eq(ntouch)
+                    & vwap_crossabove_htf1.shift().eq(ntouch - 1)
+                )
+                | S_nreject.gt(0)
+            ) & use_rsi_cond[use_rsi][0]
     else:
         longCondition = (
             vwap_crossabove_htf1.eq(ntouch)
@@ -845,6 +874,7 @@ def vwapbounce_signal(
     if resistance_rejection:
         shortCondition = (
             avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift())
+            | R_nreject.gt(0)
         ) & use_rsi_cond[use_rsi][1]
     else:
         shortCondition = (

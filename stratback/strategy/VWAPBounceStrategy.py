@@ -13,16 +13,16 @@ import datetime
 
 
 class VWAPBounceStrategy(Strategy):
-    HTF1 = "D"
+    HTF1 = "4H"
     HTF2 = "W"
     ntouch = 2
     crossing_count_reset = "1H"
     rolling_tf = False
     entry_zone = "('6:30', '7:30')"
     sod_time = "6:30"
-    eod_time = "12:25"
+    eod_time = "12:50"
     size = None
-    long_only = True
+    long_only = False
     short_only = False
     daytrade = True
     pl_pct_tp = None
@@ -31,10 +31,11 @@ class VWAPBounceStrategy(Strategy):
     use_rsi = False
     pivot_shift = 1
     price_move_tp = None
-    restrict_entry_zone = True
-    filter_by_secondary_timeframe = True
+    restrict_entry_zone = False
+    filter_by_secondary_timeframe = False
     consider_wicks = False
-    support_rejection = False
+    support_rejection = True
+    ignore_vwap_crossabove = False
     resistance_rejection = False
 
     def vwapbounce_signal(
@@ -73,21 +74,34 @@ class VWAPBounceStrategy(Strategy):
             price_move = pexp.apply(lambda x: x[-1]) - pexp.apply(lambda x: x[0])
             price_move = price_move.droplevel(0)
 
-        _, weekly_nearest_levels = price_position_by_pivots(
-            data, secondary_tf=self.HTF2, return_nearest_levels=True
+        _, weekly_levels = price_position_by_pivots(
+            data, secondary_tf=self.HTF2, return_all_levels=True
         )
-        R_nreject = crossbelow(
-            data,
-            weekly_nearest_levels["R"],
-            self.crossing_count_reset,
-            rolling_tf=self.rolling_tf,
-        )
-        S_nreject = crossabove(
-            data,
-            weekly_nearest_levels["S"],
-            self.crossing_count_reset,
-            rolling_tf=self.rolling_tf,
-        )
+
+        R_nreject = pd.concat(
+            [
+                crossbelow(
+                    data,
+                    weekly_levels[label],
+                    self.crossing_count_reset,
+                    rolling_tf=self.rolling_tf,
+                )
+                for label in weekly_levels.columns
+            ],
+            axis=1,
+        ).sum(axis=1)
+        S_nreject = pd.concat(
+            [
+                crossabove(
+                    data,
+                    weekly_levels[label],
+                    self.crossing_count_reset,
+                    rolling_tf=self.rolling_tf,
+                )
+                for label in weekly_levels.columns
+            ],
+            axis=1,
+        ).sum(axis=1)
 
         entry_hr_left = int(eval(self.entry_zone)[0].split(":")[0])
         entry_min_left = int(eval(self.entry_zone)[0].split(":")[1])
@@ -95,14 +109,16 @@ class VWAPBounceStrategy(Strategy):
         entry_min_right = int(eval(self.entry_zone)[1].split(":")[1])
 
         if self.support_rejection:
-            longCondition = (
-                (
-                    vwap_crossabove_htf1.eq(self.ntouch)
-                    & vwap_crossabove_htf1.shift().eq(self.ntouch - 1)
-                    & ~R_nreject.gt(0)
-                )
-                | S_nreject.gt(0)
-            ) & use_rsi_cond[self.use_rsi][0]
+            if self.ignore_vwap_crossabove:
+                longCondition = (S_nreject.gt(0)) & use_rsi_cond[self.use_rsi][0]
+            else:
+                longCondition = (
+                    (
+                        vwap_crossabove_htf1.eq(self.ntouch)
+                        & vwap_crossabove_htf1.shift().eq(self.ntouch - 1)
+                    )
+                    | S_nreject.gt(0)
+                ) & use_rsi_cond[self.use_rsi][0]
         else:
             longCondition = (
                 vwap_crossabove_htf1.eq(self.ntouch)
@@ -125,6 +141,7 @@ class VWAPBounceStrategy(Strategy):
         if self.resistance_rejection:
             shortCondition = (
                 avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift())
+                | R_nreject.gt(0)
             ) & use_rsi_cond[self.use_rsi][1]
         else:
             shortCondition = (
