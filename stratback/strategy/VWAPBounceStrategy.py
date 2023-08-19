@@ -37,6 +37,8 @@ class VWAPBounceStrategy(Strategy):
     support_rejection = True
     ignore_vwap_crossabove = False
     resistance_rejection = False
+    exit_on_level_rejection = False
+    vwap_diff_n = 4
 
     def vwapbounce_signal(
         self,
@@ -124,6 +126,11 @@ class VWAPBounceStrategy(Strategy):
                 vwap_crossabove_htf1.eq(self.ntouch)
                 & vwap_crossabove_htf1.shift().eq(self.ntouch - 1)
             ) & use_rsi_cond[self.use_rsi][0]
+
+        if self.vwap_diff_n:
+            vwap_mom = (avwap_htf1 - avwap_htf2).diff(self.vwap_diff_n)
+            longCondition = longCondition & vwap_mom.gt(0)
+
         if self.filter_by_secondary_timeframe:
             longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
 
@@ -189,18 +196,23 @@ class VWAPBounceStrategy(Strategy):
         long = in_session & longCondition & (not self.short_only)
         short = in_session & shortCondition & (not self.long_only)
 
-        longX = (
-            price_move.eq(self.price_move_tp)
-            & price_move.shift().ne(self.price_move_tp)
-            if self.price_move_tp is not None
-            else pd.Series([False] * len(data), index=data.index)
-        )
-        shortX = (
-            price_move.eq(-self.price_move_tp)
-            & price_move.shift().ne(-self.price_move_tp)
-            if self.price_move_tp is not None
-            else pd.Series([False] * len(data), index=data.index)
-        )
+        if self.exit_on_level_rejection:
+            longX = R_nreject.gt(0) & R_nreject.shift().eq(0)
+            shortX = S_nreject.gt(0) & S_nreject.shift().eq(0)
+        else:
+            longX = (
+                price_move.eq(self.price_move_tp)
+                & price_move.shift().ne(self.price_move_tp)
+                if self.price_move_tp is not None
+                else pd.Series([False] * len(data), index=data.index)
+            )
+
+            shortX = (
+                price_move.eq(-self.price_move_tp)
+                & price_move.shift().ne(-self.price_move_tp)
+                if self.price_move_tp is not None
+                else pd.Series([False] * len(data), index=data.index)
+            )
 
         if self.daytrade:
             eod = pd.DatetimeIndex(data.index).time >= datetime.time(

@@ -781,6 +781,8 @@ def vwapbounce_signal(
     support_rejection=True,
     resistance_rejection=False,
     ignore_vwap_crossabove=False,
+    exit_on_level_rejection=False,
+    vwap_diff_n=4,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
@@ -838,6 +840,7 @@ def vwapbounce_signal(
         ],
         axis=1,
     ).sum(axis=1)
+
     entry_hr_left = int(eval(entry_zone)[0].split(":")[0])
     entry_min_left = int(eval(entry_zone)[0].split(":")[1])
     entry_hr_right = int(eval(entry_zone)[1].split(":")[0])
@@ -859,6 +862,13 @@ def vwapbounce_signal(
             vwap_crossabove_htf1.eq(ntouch)
             & vwap_crossabove_htf1.shift().eq(ntouch - 1)
         ) & use_rsi_cond[use_rsi][0]
+
+    if vwap_diff_n:
+        vwap_mom = (avwap_htf1 - avwap_htf2).diff(vwap_diff_n)
+        longCondition = longCondition & vwap_mom.gt(0)
+
+    if filter_by_secondary_timeframe:
+        longCondition = longCondition & avwap_htf1.gt(avwap_htf2)
 
     if restrict_entry_zone:
         longCondition = longCondition & pd.Series(
@@ -900,11 +910,13 @@ def vwapbounce_signal(
             np.logical_and(
                 pd.DatetimeIndex(data.index).time
                 < datetime.time(
-                    int(eod_time.split(":")[0]), int(eod_time.split(":")[1])
+                    int(eod_time.split(":")[0]),
+                    int(eod_time.split(":")[1]),
                 ),
                 pd.DatetimeIndex(data.index).time
                 >= datetime.time(
-                    int(sod_time.split(":")[0]), int(sod_time.split(":")[1])
+                    int(sod_time.split(":")[0]),
+                    int(sod_time.split(":")[1]),
                 ),
             ),
             index=data.index,
@@ -920,16 +932,21 @@ def vwapbounce_signal(
     long = in_session & longCondition & (not short_only)
     short = in_session & shortCondition & (not long_only)
 
-    longX = (
-        price_move.eq(price_move_tp) & price_move.shift().ne(price_move_tp)
-        if price_move_tp is not None
-        else pd.Series([False] * len(data), index=data.index)
-    )
-    shortX = (
-        price_move.eq(-price_move_tp) & price_move.shift().ne(-price_move_tp)
-        if price_move_tp is not None
-        else pd.Series([False] * len(data), index=data.index)
-    )
+    if exit_on_level_rejection:
+        longX = R_nreject.gt(0) & R_nreject.shift().eq(0)
+        shortX = S_nreject.gt(0) & S_nreject.shift().eq(0)
+    else:
+        longX = (
+            price_move.eq(price_move_tp) & price_move.shift().ne(price_move_tp)
+            if price_move_tp is not None
+            else pd.Series([False] * len(data), index=data.index)
+        )
+
+        shortX = (
+            price_move.eq(-price_move_tp) & price_move.shift().ne(-price_move_tp)
+            if price_move_tp is not None
+            else pd.Series([False] * len(data), index=data.index)
+        )
     signal = pd.DataFrame(
         columns=["Long", "LongX", "Short", "ShortX"], index=data.index
     )

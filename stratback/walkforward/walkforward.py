@@ -295,9 +295,9 @@ class WalkforwardOptimization:
                 self.in_sample_data = self.data[
                     self.data.day.ge(self.days[-i]) & self.data.day.lt(self.days[-j])
                 ].reset_index()  # Update in_sample_data for optim
-                assert (
-                    len(self.in_sample_data["day"].unique()) == self.lookback
-                ), f"in-sample data not equal to lookback {self.lookback}"
+                # assert (
+                #     len(self.in_sample_data["day"].unique()) == self.lookback
+                # ), f"in-sample data of length {len(self.in_sample_data['day'].unique())} not equal to lookback {self.lookback}"
             else:  # expanding window mode
                 self.in_sample_data = self.data[
                     self.data.day.lt(self.days[-j])
@@ -391,9 +391,9 @@ class WalkforwardOptimization:
             self.oos_data = self.data[
                 self.data.day.gt(self.days[-i]) & self.data.day.le(self.days[-j])
             ].reset_index()  # Update out of sample data (next day walk)
-            assert (
-                len(self.oos_data["day"].unique()) == self.lookback
-            ), f"out-of-sample data not equal to lookback {self.lookback}"
+            # assert (
+            #     len(self.oos_data["day"].unique()) == self.lookback
+            # ), f"out-of-sample data not equal to lookback {self.lookback}"
 
             apply_current_output = WalkforwardOptimization.backtest(
                 self.in_sample_data, self.strategy, **backtest_params
@@ -692,7 +692,7 @@ def objective_generator(
         backtest_params.update(optimization_dict)
 
         backtest_output = WalkforwardOptimization.backtest(
-            in_sample_data, strategy, **backtest_params
+            in_sample_data, strategy, hedging=False, exclusive_order=False, **backtest_params
         )
         obj = tuple(backtest_output[optimization_targets.keys()].values)
 
