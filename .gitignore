@@ -8,3 +8,4 @@ doubleCloudWFO.py
 *.sqlite3
 MTFVWAPWFO.py
 VWAPBounceWFO.py
+VWAPBounceBacktestCheck.py

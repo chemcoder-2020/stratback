@@ -763,7 +763,7 @@ def vwapbounce_signal(
     HTF1="4H",
     HTF2="W",
     crossing_count_reset="1H",
-    ntouch=2,
+    ntouch=1,
     entry_zone="('6:30', '7:30')",
     sod_time="6:30",
     eod_time="12:50",
@@ -782,7 +782,7 @@ def vwapbounce_signal(
     resistance_rejection=False,
     ignore_vwap_crossabove=False,
     exit_on_level_rejection=False,
-    vwap_diff_n=4,
+    vwap_diff_n=1,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
