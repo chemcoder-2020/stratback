@@ -41,7 +41,7 @@ c = client(session=c.session, api_key=c.api_key)
 # data["date"] = pd.DatetimeIndex(data.date)
 
 # Alpaca data
-ticker = "SPY"
+ticker = "QQQ"
 data = pd.read_csv(
     rf"/Users/traderHuy/Documents/AITrading/TOS Bot 2/bigcaps_data/alpaca_{ticker}_5m.csv"
 )
@@ -50,7 +50,6 @@ data["date"] = [
     pd.to_datetime(dt, unit="ns", utc=True).tz_convert("US/Pacific") for dt in data.date
 ]
 data["date"] = pd.DatetimeIndex(data.date)
-data = data.drop(columns=["Unnamed: 0"])
 data.dropna(inplace=True)
 data.drop_duplicates(subset="date", inplace=True)
 
@@ -61,7 +60,7 @@ data.drop_duplicates(subset="date", inplace=True)
 
 # optimized params
 optimization_params = dict(
-    ntouch=(1, 5, 1, "int"),
+    # ntouch=(1, 5, 1, "int"),
     # HTF1=(
     #     [
     #         "1H",
@@ -71,11 +70,15 @@ optimization_params = dict(
     #     ],
     #     "categorical",
     # ),
-    vwap_diff_n=(1, 10, 1, "int"),
+    # vwap_diff_n=(1, 10, 1, "int"),
+    stop_pct = (0.005,0.05,0.001, "float"),
 )
 # optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Calmar Ratio": "maximize"}
-optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Win Rate [%]": "maximize"}
-
+optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Calmar Ratio": "maximize", "Win Rate [%]": "maximize"}
+# optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Win Rate [%]": "maximize"}
+# optimization_targets = {"Avg. Trade WL Ratio": "maximize"}
+# optimization_targets = {"Win Rate [%]": "maximize"}
+# optimization_targets = {"Return (Ann.) [%]": "maximize"}
 
 def best_trial_function(t):
     try:
@@ -94,13 +97,13 @@ strategy_kwargs = dict(
     HTF2="W",
     crossing_count_reset="1H",
     eod_time="12:50",
-    support_rejection=False,
+    support_rejection=True,
     ignore_vwap_crossabove=False,
     rolling_tf=False,
-    # vwap_diff_n=8,
+    vwap_diff_n=1,
     # filter_by_secondary_timeframe=True,
     # resistance_rejection=True,
-    # ntouch=4,
+    ntouch=1,
     # consider_wicks=True
     # entry_zone="('6:30','10:30')",
 )  # initialize base strategy_kwargs
@@ -115,9 +118,9 @@ wfo = WalkforwardOptimization(
     optimization_targets=optimization_targets,
     strategy_kwargs=strategy_kwargs,
     best_trial_function=best_trial_function,
-    max_trials=50,
+    max_trials=60,
     ticker=ticker,
-    min_trials=20,
+    min_trials=50,
     patience=10,
     objective_generator=objective_generator,
     sampler=optuna.samplers.TPESampler(
@@ -126,6 +129,12 @@ wfo = WalkforwardOptimization(
         multivariate=True,
         group=True,
     ),
+    # sampler=optuna.samplers.GridSampler(
+    #     {
+    #         'ntouch': [1,2,3,4,5],
+    #         'vwap_diff_n': [1,2,3,4,5,6,7,8,9,10],
+    #     }
+    # ),
     pruner=optuna.pruners.HyperbandPruner(min_resource=1, reduction_factor=3),
     storage="sqlite:///db.sqlite3",
     # walk_length=1200,
