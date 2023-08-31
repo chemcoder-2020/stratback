@@ -72,10 +72,11 @@ optimization_params = dict(
     # ),
     # vwap_diff_n=(1, 10, 1, "int"),
     stop_pct = (0.005,0.05,0.001, "float"),
+    pl_pct_tp = (0.005,0.05,0.001, "float"),
 )
 # optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Calmar Ratio": "maximize"}
-optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Calmar Ratio": "maximize", "Win Rate [%]": "maximize"}
-# optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Win Rate [%]": "maximize"}
+# optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Calmar Ratio": "maximize", "Win Rate [%]": "maximize"}
+optimization_targets = {"Avg. Trade WL Ratio": "maximize", "Win Rate [%]": "maximize"}
 # optimization_targets = {"Avg. Trade WL Ratio": "maximize"}
 # optimization_targets = {"Win Rate [%]": "maximize"}
 # optimization_targets = {"Return (Ann.) [%]": "maximize"}

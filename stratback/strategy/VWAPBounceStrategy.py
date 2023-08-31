@@ -15,7 +15,7 @@ import datetime
 class VWAPBounceStrategy(Strategy):
     HTF1 = "4H"
     HTF2 = "W"
-    ntouch = 2
+    ntouch = 1
     crossing_count_reset = "1H"
     rolling_tf = False
     entry_zone = "('6:30', '7:30')"
@@ -28,6 +28,7 @@ class VWAPBounceStrategy(Strategy):
     pl_pct_tp = None
     limit_pct = None
     stop_pct = None
+    tsl_pct = None
     use_rsi = False
     pivot_shift = 1
     price_move_tp = None
@@ -38,7 +39,7 @@ class VWAPBounceStrategy(Strategy):
     ignore_vwap_crossabove = False
     resistance_rejection = False
     exit_on_level_rejection = False
-    vwap_diff_n = 4
+    vwap_diff_n = 1
 
     def vwapbounce_signal(
         self,
@@ -281,7 +282,7 @@ class VWAPBounceStrategy(Strategy):
             else:
                 self._signals[self.data.index[-1]] = np.nan
         elif self.in_session:
-            if crossover(self.longs, 0.5) and not self.short_only:
+            if crossover(self.longs, 0.5) and not self.short_only and not self.position:
                 limit = (
                     (1 - self.limit_pct) * self.close[-1]
                     if self.limit_pct is not None
@@ -292,7 +293,9 @@ class VWAPBounceStrategy(Strategy):
                 else:
                     self.buy(size=self.size, limit=limit)
                 self._signals[self.data.index[-1]] = 1
-            elif crossover(self.shorts, 0.5) and not self.long_only:
+            elif (
+                crossover(self.shorts, 0.5) and not self.long_only and not self.position
+            ):
                 limit = (
                     (1 + self.limit_pct) * self.close[-1]
                     if self.limit_pct is not None
@@ -319,6 +322,27 @@ class VWAPBounceStrategy(Strategy):
                     self.position.is_long or self.position.is_short
                 ) and self.position.pl_pct < -self.stop_pct:
                     self.position.close()
+
+            if self.pl_pct_tp is not None:
+                if (
+                    self.position.is_long or self.position.is_short
+                ) and self.position.pl_pct > self.pl_pct_tp:
+                    self.position.close()
+
+            # tsl
+            if self.tsl_pct is not None:
+                for trade in self.trades:
+                    entry_price = trade.entry_price
+                    tsl = entry_price * self.tsl_pct
+                    if trade.is_long:
+                        trade.sl = max(
+                            trade.sl or -np.inf, self.data["Close"][-1] - tsl
+                        )
+                    else:  # short
+                        trade.sl = min(
+                            trade.sl or np.inf,
+                            self.data["Close"][-1] + tsl,
+                        )
 
     def signals(self):
         return self._signals.shift()
