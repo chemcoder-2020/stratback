@@ -40,6 +40,8 @@ class VWAPBounceStrategy(Strategy):
     resistance_rejection = False
     exit_on_level_rejection = False
     vwap_diff_n = 1
+    ignore_firstbar_vwap_diff = False
+    trade_limit = None
 
     def vwapbounce_signal(
         self,
@@ -130,6 +132,8 @@ class VWAPBounceStrategy(Strategy):
 
         if self.vwap_diff_n:
             vwap_mom = (avwap_htf1 - avwap_htf2).diff(self.vwap_diff_n)
+            if self.ignore_firstbar_vwap_diff:
+                vwap_mom[data["isFirstBar"]] = 0
             longCondition = longCondition & vwap_mom.gt(0)
 
         if self.filter_by_secondary_timeframe:
@@ -196,6 +200,10 @@ class VWAPBounceStrategy(Strategy):
 
         long = in_session & longCondition & (not self.short_only)
         short = in_session & shortCondition & (not self.long_only)
+        group = data.index.floor("D")
+        long_num = long.groupby(group).cumsum()
+        short_num = short.groupby(group).cumsum()
+        signal_num = long_num + short_num
 
         if self.exit_on_level_rejection:
             longX = R_nreject.gt(0) & R_nreject.shift().eq(0)
@@ -226,7 +234,7 @@ class VWAPBounceStrategy(Strategy):
                     index=data.index,
                 ),
             )
-        return long, short, longX, shortX, avwap_htf1, rsi, eod
+        return long, short, longX, shortX, avwap_htf1, rsi, eod, signal_num
 
     def init(self):
         (
@@ -237,6 +245,7 @@ class VWAPBounceStrategy(Strategy):
             self.ma_mid,
             self.rsi,
             self.eod,
+            self.signal_num,
         ) = self.I(
             self.vwapbounce_signal,
             self.data.df,
@@ -282,67 +291,144 @@ class VWAPBounceStrategy(Strategy):
             else:
                 self._signals[self.data.index[-1]] = np.nan
         elif self.in_session:
-            if crossover(self.longs, 0.5) and not self.short_only and not self.position:
-                limit = (
-                    (1 - self.limit_pct) * self.close[-1]
-                    if self.limit_pct is not None
-                    else None
-                )
-                if self.size is None:
-                    self.buy(limit=limit)
-                else:
-                    self.buy(size=self.size, limit=limit)
-                self._signals[self.data.index[-1]] = 1
-            elif (
-                crossover(self.shorts, 0.5) and not self.long_only and not self.position
-            ):
-                limit = (
-                    (1 + self.limit_pct) * self.close[-1]
-                    if self.limit_pct is not None
-                    else None
-                )
-                if self.size is None:
-                    self.sell(limit=limit)
-                else:
-                    self.sell(size=self.size, limit=limit)
-                self._signals[self.data.index[-1]] = -1
+            if self.trade_limit is None:
+                if (
+                    crossover(self.longs, 0.5)
+                    and not self.short_only
+                    and not self.position
+                ):
+                    limit = (
+                        (1 - self.limit_pct) * self.close[-1]
+                        if self.limit_pct is not None
+                        else None
+                    )
+                    if self.size is None:
+                        self.buy(limit=limit)
+                    else:
+                        self.buy(size=self.size, limit=limit)
+                    self._signals[self.data.index[-1]] = 1
+                elif (
+                    crossover(self.shorts, 0.5)
+                    and not self.long_only
+                    and not self.position
+                ):
+                    limit = (
+                        (1 + self.limit_pct) * self.close[-1]
+                        if self.limit_pct is not None
+                        else None
+                    )
+                    if self.size is None:
+                        self.sell(limit=limit)
+                    else:
+                        self.sell(size=self.size, limit=limit)
+                    self._signals[self.data.index[-1]] = -1
 
-            elif self.position.is_long and crossover(self.longXs, 0.5):
-                self.position.close()
-                self._signals[self.data.index[-1]] = 2
+                elif self.position.is_long and crossover(self.longXs, 0.5):
+                    self.position.close()
+                    self._signals[self.data.index[-1]] = 2
 
-            elif self.position.is_short and crossover(self.shortXs, 0.5):
-                self.position.close()
-                self._signals[self.data.index[-1]] = -2
+                elif self.position.is_short and crossover(self.shortXs, 0.5):
+                    self.position.close()
+                    self._signals[self.data.index[-1]] = -2
+                else:
+                    self._signals[self.data.index[-1]] = np.nan
+
+                if self.stop_pct is not None:
+                    if (
+                        self.position.is_long or self.position.is_short
+                    ) and self.position.pl_pct < -self.stop_pct:
+                        self.position.close()
+
+                if self.pl_pct_tp is not None:
+                    if (
+                        self.position.is_long or self.position.is_short
+                    ) and self.position.pl_pct > self.pl_pct_tp:
+                        self.position.close()
+
+                # tsl
+                if self.tsl_pct is not None:
+                    for trade in self.trades:
+                        entry_price = trade.entry_price
+                        tsl = entry_price * self.tsl_pct
+                        if trade.is_long:
+                            trade.sl = max(
+                                trade.sl or -np.inf, self.data["Close"][-1] - tsl
+                            )
+                        else:  # short
+                            trade.sl = min(
+                                trade.sl or np.inf,
+                                self.data["Close"][-1] + tsl,
+                            )
             else:
-                self._signals[self.data.index[-1]] = np.nan
-
-            if self.stop_pct is not None:
                 if (
-                    self.position.is_long or self.position.is_short
-                ) and self.position.pl_pct < -self.stop_pct:
-                    self.position.close()
+                    crossover(self.longs, 0.5)
+                    and not self.short_only
+                    and not self.position
+                    and self.signal_num <= self.trade_limit
+                ):
+                    limit = (
+                        (1 - self.limit_pct) * self.close[-1]
+                        if self.limit_pct is not None
+                        else None
+                    )
+                    if self.size is None:
+                        self.buy(limit=limit)
+                    else:
+                        self.buy(size=self.size, limit=limit)
+                    self._signals[self.data.index[-1]] = 1
+                elif (
+                    crossover(self.shorts, 0.5)
+                    and not self.long_only
+                    and not self.position
+                    and self.signal_num <= self.trade_limit
+                ):
+                    limit = (
+                        (1 + self.limit_pct) * self.close[-1]
+                        if self.limit_pct is not None
+                        else None
+                    )
+                    if self.size is None:
+                        self.sell(limit=limit)
+                    else:
+                        self.sell(size=self.size, limit=limit)
+                    self._signals[self.data.index[-1]] = -1
 
-            if self.pl_pct_tp is not None:
-                if (
-                    self.position.is_long or self.position.is_short
-                ) and self.position.pl_pct > self.pl_pct_tp:
+                elif self.position.is_long and crossover(self.longXs, 0.5):
                     self.position.close()
+                    self._signals[self.data.index[-1]] = 2
 
-            # tsl
-            if self.tsl_pct is not None:
-                for trade in self.trades:
-                    entry_price = trade.entry_price
-                    tsl = entry_price * self.tsl_pct
-                    if trade.is_long:
-                        trade.sl = max(
-                            trade.sl or -np.inf, self.data["Close"][-1] - tsl
-                        )
-                    else:  # short
-                        trade.sl = min(
-                            trade.sl or np.inf,
-                            self.data["Close"][-1] + tsl,
-                        )
+                elif self.position.is_short and crossover(self.shortXs, 0.5):
+                    self.position.close()
+                    self._signals[self.data.index[-1]] = -2
+                else:
+                    self._signals[self.data.index[-1]] = np.nan
+
+                if self.stop_pct is not None:
+                    if (
+                        self.position.is_long or self.position.is_short
+                    ) and self.position.pl_pct < -self.stop_pct:
+                        self.position.close()
+
+                if self.pl_pct_tp is not None:
+                    if (
+                        self.position.is_long or self.position.is_short
+                    ) and self.position.pl_pct > self.pl_pct_tp:
+                        self.position.close()
+
+                # tsl
+                if self.tsl_pct is not None:
+                    for trade in self.trades:
+                        entry_price = trade.entry_price
+                        tsl = entry_price * self.tsl_pct
+                        if trade.is_long:
+                            trade.sl = max(
+                                trade.sl or -np.inf, self.data["Close"][-1] - tsl
+                            )
+                        else:  # short
+                            trade.sl = min(
+                                trade.sl or np.inf,
+                                self.data["Close"][-1] + tsl,
+                            )
 
     def signals(self):
         return self._signals.shift()

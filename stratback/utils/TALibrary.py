@@ -783,6 +783,7 @@ def vwapbounce_signal(
     ignore_vwap_crossabove=False,
     exit_on_level_rejection=False,
     vwap_diff_n=1,
+    ignore_firstbar_vwap_diff = False,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
@@ -865,6 +866,8 @@ def vwapbounce_signal(
 
     if vwap_diff_n:
         vwap_mom = (avwap_htf1 - avwap_htf2).diff(vwap_diff_n)
+        if ignore_firstbar_vwap_diff:
+            vwap_mom[data['isFirstBar']] = 0
         longCondition = longCondition & vwap_mom.gt(0)
 
     if filter_by_secondary_timeframe:
