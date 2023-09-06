@@ -396,7 +396,7 @@ def price_position_by_pivots(
     data.columns = data.columns.str.lower()
     if "date" in data.columns:
         data = data.set_index("date")
-    pivot_data = data.shift(pivot_data_shift)
+    pivot_data = data.copy()
 
     high = (
         pivot_data.high.groupby(pivot_data.index.to_period(secondary_tf))
@@ -424,7 +424,7 @@ def price_position_by_pivots(
     close = (
         pivot_data.close.groupby(pivot_data.index.to_period(secondary_tf))
         .last()
-        .shift(1)
+        .shift(pivot_data_shift)
     )
     close.index = (
         pd.Series(pivot_data.index)
