@@ -391,6 +391,7 @@ def price_position_by_pivots(
     pivot_data_shift=1,
     return_nearest_levels=False,
     return_all_levels=False,
+    round_to=None,
 ):
     data = data.copy().reset_index()
     data.columns = data.columns.str.lower()
@@ -447,6 +448,22 @@ def price_position_by_pivots(
     vS4 = vS1 - 2 * (xHigh - xLow)
     vR5 = vR1 + 3 * (xHigh - xLow)
     vS5 = vS1 - 3 * (xHigh - xLow)
+    if round_to:
+
+        def nround(x, n):
+            return round(x * 10**n) / round(10**n)
+
+        vPP = vPP.apply(lambda x: nround(x, round_to))
+        vR1 = vR1.apply(lambda x: nround(x, round_to))
+        vR2 = vR2.apply(lambda x: nround(x, round_to))
+        vR3 = vR3.apply(lambda x: nround(x, round_to))
+        vR4 = vR4.apply(lambda x: nround(x, round_to))
+        vR5 = vR5.apply(lambda x: nround(x, round_to))
+        vS1 = vS1.apply(lambda x: nround(x, round_to))
+        vS2 = vS2.apply(lambda x: nround(x, round_to))
+        vS3 = vS3.apply(lambda x: nround(x, round_to))
+        vS4 = vS4.apply(lambda x: nround(x, round_to))
+        vS5 = vS5.apply(lambda x: nround(x, round_to))
 
     p5 = data.close.between(vR5[data.index], np.inf)
     p4 = data.close.between(vR4[data.index], vR5[data.index])
