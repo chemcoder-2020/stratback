@@ -448,18 +448,18 @@ def price_position_by_pivots(
     vR5 = vR1 + 3 * (xHigh - xLow)
     vS5 = vS1 - 3 * (xHigh - xLow)
 
-    p5 = data.close.between(vR5, np.inf)
-    p4 = data.close.between(vR4, vR5)
-    p3 = data.close.between(vR3, vR4)
-    p2 = data.close.between(vR2, vR3)
-    p1 = data.close.between(vR1, vR2)
-    p0 = data.close.between(vPP, vR1)
-    p_1 = data.close.between(vS1, vPP)
-    p_2 = data.close.between(vS2, vS1)
-    p_3 = data.close.between(vS3, vS2)
-    p_4 = data.close.between(vS4, vS3)
-    p_5 = data.close.between(vS5, vS4)
-    p_6 = data.close.between(-np.inf, vS5)
+    p5 = data.close.between(vR5[data.index], np.inf)
+    p4 = data.close.between(vR4[data.index], vR5[data.index])
+    p3 = data.close.between(vR3[data.index], vR4[data.index])
+    p2 = data.close.between(vR2[data.index], vR3[data.index])
+    p1 = data.close.between(vR1[data.index], vR2[data.index])
+    p0 = data.close.between(vPP[data.index], vR1[data.index])
+    p_1 = data.close.between(vS1[data.index], vPP[data.index])
+    p_2 = data.close.between(vS2[data.index], vS1[data.index])
+    p_3 = data.close.between(vS3[data.index], vS2[data.index])
+    p_4 = data.close.between(vS4[data.index], vS3[data.index])
+    p_5 = data.close.between(vS5[data.index], vS4[data.index])
+    p_6 = data.close.between(-np.inf, vS5[data.index])
 
     price_position = pd.concat(
         [p_6, p_5, p_4, p_3, p_2, p_1, p0, p1, p2, p3, p4, p5], axis=1
@@ -783,7 +783,7 @@ def vwapbounce_signal(
     ignore_vwap_crossabove=False,
     exit_on_level_rejection=False,
     vwap_diff_n=1,
-    ignore_firstbar_vwap_diff = False,
+    ignore_firstbar_vwap_diff=False,
 ):
     data = data.copy()
     data.columns = data.columns.str.lower()
@@ -867,7 +867,7 @@ def vwapbounce_signal(
     if vwap_diff_n:
         vwap_mom = (avwap_htf1 - avwap_htf2).diff(vwap_diff_n)
         if ignore_firstbar_vwap_diff:
-            vwap_mom[data['isFirstBar']] = 0
+            vwap_mom[data["isFirstBar"]] = 0
         longCondition = longCondition & vwap_mom.gt(0)
 
     if filter_by_secondary_timeframe:
