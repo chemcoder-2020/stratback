@@ -448,9 +448,10 @@ def price_position_by_pivots(
     vS4 = vS1 - 2 * (xHigh - xLow)
     vR5 = vR1 + 3 * (xHigh - xLow)
     vS5 = vS1 - 3 * (xHigh - xLow)
-    
+
     def nround(x, n):
         return round(x * 10**n) / round(10**n)
+
     if round_to is not None:
         vPP = vPP.apply(lambda x: nround(x, round_to))
         vR1 = vR1.apply(lambda x: nround(x, round_to))
@@ -526,6 +527,265 @@ def price_position_by_pivots(
         return price_position, levels
     else:
         return price_position
+
+
+def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_buffer=1):
+    data = data.copy()
+    if nearest_levels is None:
+        nearest_levels = price_position_by_pivots(
+            data, return_nearest_levels=True, pivot_data_shift=1, round_to=0
+        )[1]
+    support = nearest_levels["S"]
+    resistance = nearest_levels["R"]
+
+    if mvwap is None:
+        mvwap = calc_vwap(data, "M")
+    df = pd.concat(
+        [data.close, data.high, data.low, data.open, mvwap, resistance, support], axis=1
+    )
+    df = df[df.index.day != 1]  # skip first day of month
+    df.dropna(inplace=True)
+    trade_df = pd.concat(
+        [
+            pd.Series(df.groupby(df.index.to_period("D")).close.first().index),  # date
+            df.groupby(df.index.to_period("D"))[["close", "open", "VWAP_M", "R", "S"]]
+            .first()
+            .reset_index()
+            .drop(columns="date"),  # first bar of day
+            df.groupby(df.index.to_period("D"))
+            .high.max()
+            .reset_index()
+            .drop(columns="date"),  # day high
+            df.groupby(df.index.to_period("D"))
+            .low.min()
+            .reset_index()
+            .drop(columns="date"),  # day low
+            df.groupby(df.index.to_period("D"))
+            .close.last()
+            .reset_index()
+            .drop(columns="date"),  # eod close
+        ],
+        axis=1,
+    )
+
+    trade_df.columns = [
+        "date",
+        "bod_close",
+        "bod_open",
+        "VWAP_M",
+        "R",
+        "S",
+        "max_high",
+        "min_low",
+        "eod_close",
+    ]
+
+    def trade_type(x):
+        if x.bod_close < x.VWAP_M:
+            return "CCS"
+        elif x.bod_close > x.VWAP_M:
+            return "PCS"
+        else:
+            return "none"
+
+    def won(x):
+        if x["Spread Type"] == "PCS":
+            if x.eod_close > x.S - level_buffer:
+                return 1
+            else:
+                return 0
+        elif x["Spread Type"] == "CCS":
+            if x.eod_close < x.R + level_buffer:
+                return 1
+            else:
+                return 0
+
+    def eod_proximity(x):
+        if x["Spread Type"] == "PCS":
+            return x.eod_close - (x.S - level_buffer)
+        elif x["Spread Type"] == "CCS":
+            return x.R + level_buffer - x.eod_close
+
+    def retrace(x):
+        if x["Spread Type"] == "PCS":
+            return x["min_low"] - x.S + level_buffer
+        elif x["Spread Type"] == "CCS":
+            return x.R + level_buffer - x["max_high"]
+
+    trade_df["Spread Type"] = trade_df.apply(trade_type, axis=1)
+    trade_df["Won"] = trade_df.apply(won, axis=1)
+    trade_df["Delta"] = trade_df.apply(
+        lambda x: x["bod_close"] - x["S"] + level_buffer
+        if x["Spread Type"] == "PCS"
+        else x["R"] - x["bod_close"] + level_buffer,
+        axis=1,
+    )
+    trade_df["Retrace"] = trade_df.apply(retrace, axis=1)
+    trade_df["EOD_proximity"] = trade_df.apply(eod_proximity, axis=1)
+
+    winrate_stats = trade_df.groupby("Spread Type").Won.describe().round(2)
+    delta_stats = trade_df.groupby("Spread Type").Delta.describe().round(2)
+    retrace_stats = trade_df.groupby("Spread Type").Retrace.describe().round(2)
+
+    out = pd.DataFrame(
+        [
+            data.index[-1].date().strftime("%Y-%m-%d"),
+            df.groupby(df.index.to_period("D")).close.first().iloc[-1],  # bod close
+            winrate_stats.loc["CCS", "mean"],
+            delta_stats.loc["CCS", "mean"],
+            retrace_stats.loc["CCS", "mean"],
+            winrate_stats.loc["PCS", "mean"],
+            delta_stats.loc["PCS", "mean"],
+            retrace_stats.loc["PCS", "mean"],
+            trade_df.iloc[-1]["bod_open"],
+            trade_df.iloc[-1]["VWAP_M"],
+            trade_df.iloc[-1]["Spread Type"],
+            trade_df.iloc[-1]["R"] + level_buffer,
+            trade_df.iloc[-1]["S"] - level_buffer,
+            trade_df.iloc[-1]["max_high"],
+            trade_df.iloc[-1]["min_low"],
+            trade_df.iloc[-1]["eod_close"],
+            trade_df.iloc[-1]["Won"],
+            trade_df.iloc[-1]["Delta"],
+            trade_df.iloc[-1]["Retrace"],
+            trade_df.iloc[-1]["EOD_proximity"],
+        ],
+        index=[
+            "date",
+            "bod_close",
+            "Winrate_CCS_mean",
+            "Delta_CCS_mean",
+            "Retrace_CCS_mean",
+            "Winrate_PCS_mean",
+            "Delta_PCS_mean",
+            "Retrace_PCS_mean",
+            "bod_open",
+            "VWAP_M",
+            "Spread Type",
+            "R",
+            "S",
+            "max_high",
+            "min_low",
+            "eod_close",
+            "Won",
+            "Delta",
+            "Retrace",
+            "EOD_proximity",
+        ],
+    ).T
+    # print(out)
+    return out
+
+
+def zero_dte_spread_logic(
+    data, mvwap=None, nearest_levels=None, level_buffer=None, underlying_symbol=None, spread_width = 1, target_credit=None, shift=True
+):
+    data = data.copy().reset_index()
+    data.columns = data.columns.str.lower()
+    if "date" in data.columns:
+        data = data.set_index("date")
+    if nearest_levels is None:
+        nearest_levels = price_position_by_pivots(
+            data, return_nearest_levels=True, pivot_data_shift=1, round_to=0
+        )[1]
+    support = nearest_levels["S"]
+    resistance = nearest_levels["R"]
+
+    if mvwap is None:
+        mvwap = calc_vwap(data, "M")
+
+    if level_buffer is None:
+        days = np.unique(data.index.date)
+        df = data[days[-50].strftime("%Y-%m-%d") :]
+        mvwap_segment = mvwap[days[-50].strftime("%Y-%m-%d") :]
+        nearest_levels_segment = nearest_levels[days[-50].strftime("%Y-%m-%d") :]
+        for k in range(4):
+            stats = compute_zerodte_spread_stats(
+                df,
+                mvwap=mvwap_segment,
+                nearest_levels=nearest_levels_segment,
+                level_buffer=k,
+            )
+            # if stats["Winrate_CCS_mean"][0] > 0.8 or stats["Winrate_PCS_mean"][0] > 0.8:
+            #     levels_buffer = k
+            #     break
+            if (
+                0 < stats["Retrace_CCS_mean"][0] < 1
+                or 0 < stats["Retrace_PCS_mean"][0] < 1
+            ):
+                level_buffer = k
+                break
+
+
+    df = pd.concat(
+        [
+            data.close,
+            data.high,
+            data.low,
+            data.open,
+            mvwap,
+            resistance + level_buffer,
+            support - level_buffer,
+        ],
+        axis=1,
+    )
+    # df = df[df.index.day != 1]  # skip first day of month
+    df.dropna(inplace=True)
+    df.columns = ["close", "high", "low", "open", "VWAP_M", "R", "S"]
+
+    def trade_type(x):
+        if x.close < x.VWAP_M:
+            return "CCS"
+        elif x.close > x.VWAP_M:
+            return "PCS"
+        else:
+            return "none"
+
+    df["spread"] = df.apply(trade_type, axis=1)
+    data["day"] = pd.DatetimeIndex(data.index).date
+    data["isFirstBar"] = data["day"].diff() >= "1 days"
+    df["signal"] = data["isFirstBar"]
+    if underlying_symbol is not None:
+        def long_option_symbol(x):
+            date = x.name.strftime("%m%d%y")
+            if x.spread == "PCS":
+                long_strike = int(x.S - spread_width)
+            else:
+                long_strike = int(x.R + spread_width)
+            return f"{underlying_symbol}_{date}{x.spread[0]}{long_strike}"
+        
+        def short_option_symbol(x):
+            date = x.name.strftime("%m%d%y")
+            if x.spread == "PCS":
+                short_strike = int(x.S)
+            else:
+                short_strike = int(x.R)
+            return f"{underlying_symbol}_{date}{x.spread[0]}{short_strike}"
+        
+        df["long_option_symbol"] = df.apply(long_option_symbol, axis=1)
+        df["short_option_symbol"] = df.apply(short_option_symbol, axis=1)
+    
+    if target_credit is None:
+        days = np.unique(data.index.date)
+        data_segment = data[days[-50].strftime("%Y-%m-%d") :]
+        mvwap_segment = mvwap[days[-50].strftime("%Y-%m-%d") :]
+        nearest_levels_segment = nearest_levels[days[-50].strftime("%Y-%m-%d") :]
+        stats = compute_zerodte_spread_stats(
+            data_segment,
+            mvwap=mvwap_segment,
+            nearest_levels=nearest_levels_segment,
+            level_buffer=level_buffer,
+        )
+        def credit(x):
+            return 0.5/(1+stats[f"Retrace_{x.spread}_mean"]) - 0.05
+        df["credit"] = df.apply(credit, axis=1)
+    else:
+        df["credit"] = target_credit
+
+    if shift:
+        return df.shift()
+    else:
+        return df
 
 
 def dailySpreadProbabilityBrackets(data, pivot_tf="W", pivot_data_shift=1):
