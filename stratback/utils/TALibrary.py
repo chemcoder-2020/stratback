@@ -448,11 +448,10 @@ def price_position_by_pivots(
     vS4 = vS1 - 2 * (xHigh - xLow)
     vR5 = vR1 + 3 * (xHigh - xLow)
     vS5 = vS1 - 3 * (xHigh - xLow)
-    if round_to:
-
-        def nround(x, n):
-            return round(x * 10**n) / round(10**n)
-
+    
+    def nround(x, n):
+        return round(x * 10**n) / round(10**n)
+    if round_to is not None:
         vPP = vPP.apply(lambda x: nround(x, round_to))
         vR1 = vR1.apply(lambda x: nround(x, round_to))
         vR2 = vR2.apply(lambda x: nround(x, round_to))
