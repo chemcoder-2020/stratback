@@ -387,6 +387,14 @@ def ma_double_cloud_signal(
 def nround(x, n):
     return round(x * 10**n) / round(10**n)
 
+def kelly_investment_size(dollar, winning_probability, winning_return, losing_return, bet_dollar_amount=None):
+    dollar_risk = (winning_probability / losing_return - (1-winning_probability) / winning_return) * dollar
+    if bet_dollar_amount is not None:
+        out = int(dollar_risk / bet_dollar_amount)
+    else:
+        out = dollar_risk
+    return out
+
 def price_position_by_pivots(
     data,
     secondary_tf="D",
