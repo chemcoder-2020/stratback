@@ -5,6 +5,7 @@ import vectorbt as vbt
 import datetime
 from scipy.stats import linregress
 import re
+from stratback.utils.blackscholes import putPrice, callPrice
 
 pd.options.display.max_rows = 999
 
@@ -595,17 +596,11 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
         else:
             return "none"
 
-    def won(x):
+    def retrace(x):
         if x["Spread Type"] == "PCS":
-            if x.eod_close > x.S - level_buffer:
-                return 1
-            else:
-                return 0
+            return x["min_low"] - x.S + level_buffer
         elif x["Spread Type"] == "CCS":
-            if x.eod_close < x.R + level_buffer:
-                return 1
-            else:
-                return 0
+            return x.R + level_buffer - x["max_high"]
 
     def eod_proximity(x):
         if x["Spread Type"] == "PCS":
@@ -613,22 +608,77 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
         elif x["Spread Type"] == "CCS":
             return x.R + level_buffer - x.eod_close
 
-    def retrace(x):
+    def delta_premium_sold(x):
         if x["Spread Type"] == "PCS":
-            return x["min_low"] - x.S + level_buffer
+            short_strike = x.S - level_buffer
+            long_strike = x.S - level_buffer - 1
+            short_strike_prem = putPrice(
+                x.bod_close, short_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            long_strike_prem = putPrice(
+                x.bod_close, long_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            prem = short_strike_prem - long_strike_prem
         elif x["Spread Type"] == "CCS":
-            return x.R + level_buffer - x["max_high"]
+            short_strike = x.R + level_buffer
+            long_strike = x.R + level_buffer + 1
+            short_strike_prem = callPrice(
+                x.bod_close, short_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            long_strike_prem = callPrice(
+                x.bod_close, long_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            prem = short_strike_prem - long_strike_prem
+        return prem
+
+    def retrace_premium(x):
+        if x["Spread Type"] == "PCS":
+            short_strike = x.S - level_buffer
+            long_strike = x.S - level_buffer - 1
+            short_strike_prem = putPrice(
+                x.min_low, short_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            long_strike_prem = putPrice(
+                x.min_low, long_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            prem = short_strike_prem - long_strike_prem
+        elif x["Spread Type"] == "CCS":
+            short_strike = x.R + level_buffer
+            long_strike = x.R + level_buffer + 1
+            short_strike_prem = callPrice(
+                x.max_high, short_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            long_strike_prem = callPrice(
+                x.max_high, long_strike, r=0.028, sigma=0.2, t=1 / 365
+            )
+            prem = short_strike_prem - long_strike_prem
+        return prem
+
+    def won(x):
+        if x["Spread Type"] == "PCS":
+            if x.eod_close > x.S - level_buffer and x["Retrace Premium"] < 0.5:
+                return 1
+            else:
+                return 0
+        elif x["Spread Type"] == "CCS":
+            if x.eod_close < x.R + level_buffer and x["Retrace Premium"] < 0.5:
+                return 1
+            else:
+                return 0
 
     trade_df["Spread Type"] = trade_df.apply(trade_type, axis=1)
-    trade_df["Won"] = trade_df.apply(won, axis=1)
+
     trade_df["Delta"] = trade_df.apply(
         lambda x: x["bod_close"] - x["S"] + level_buffer
         if x["Spread Type"] == "PCS"
         else x["R"] - x["bod_close"] + level_buffer,
         axis=1,
     )
+    trade_df["Delta Premium"] = trade_df.apply(delta_premium_sold, axis=1)
     trade_df["Retrace"] = trade_df.apply(retrace, axis=1)
+    trade_df["Retrace Premium"] = trade_df.apply(retrace_premium, axis=1)
     trade_df["EOD_proximity"] = trade_df.apply(eod_proximity, axis=1)
+    trade_df["Won"] = trade_df.apply(won, axis=1)
 
     winrate_stats = trade_df.groupby("Spread Type").Won.describe().round(2)
     delta_stats = trade_df.groupby("Spread Type").Delta.describe().round(2)
@@ -654,7 +704,9 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
             trade_df.iloc[-1]["eod_close"],
             trade_df.iloc[-1]["Won"],
             trade_df.iloc[-1]["Delta"],
+            trade_df.iloc[-1]["Delta Premium"],
             trade_df.iloc[-1]["Retrace"],
+            trade_df.iloc[-1]["Retrace Premium"],
             trade_df.iloc[-1]["EOD_proximity"],
         ],
         index=[
@@ -676,7 +728,9 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
             "eod_close",
             "Won",
             "Delta",
+            "Delta Premium",
             "Retrace",
+            "Retrace Premium",
             "EOD_proximity",
         ],
     ).T
