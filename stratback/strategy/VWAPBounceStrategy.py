@@ -8,6 +8,7 @@ from stratback.utils.TALibrary import (
     calc_vwap,
     crossabove,
     crossbelow,
+    nround,
 )
 import datetime
 
@@ -149,18 +150,14 @@ class VWAPBounceStrategy(Strategy):
                 ),
                 index=data.index,
             )
+        
+        shortCondition = (avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift()))
 
         if self.resistance_rejection:
-            shortCondition = (
-                avwap_htf1.lt(avwap_htf2) & avwap_htf1.shift().ge(avwap_htf2.shift())
-                | R_nreject.gt(0)
-            ) & use_rsi_cond[self.use_rsi][1]
-        else:
-            shortCondition = (
-                avwap_htf1.lt(avwap_htf2)
-                & avwap_htf1.shift().ge(avwap_htf2.shift())
-                & use_rsi_cond[self.use_rsi][1]
-            )
+            shortCondition = shortCondition | R_nreject.gt(0)
+        
+        shortCondition = shortCondition & use_rsi_cond[self.use_rsi][1]
+
         if self.filter_by_secondary_timeframe:
             shortCondition = shortCondition & avwap_htf1.lt(avwap_htf2)
         if self.restrict_entry_zone:
