@@ -8,7 +8,6 @@ from stratback.utils.TALibrary import (
     calc_vwap,
     crossabove,
     crossbelow,
-    nround,
 )
 import datetime
 
