@@ -562,9 +562,31 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
         .drop(columns="index")
     )  # second bar's open
     bar2_open.columns = ["bar2_open"]
-    day_high_time = pd.Series(datetime.time(13,0).hour - np.array([t.hour for t in pd.DatetimeIndex(df.groupby(grouper).high.idxmax()).time]) - np.array([t.minute / 60 for t in pd.DatetimeIndex(df.groupby(grouper).high.idxmax()).time]))
+    day_high_time = pd.Series(
+        datetime.time(13, 0).hour
+        - np.array(
+            [t.hour for t in pd.DatetimeIndex(df.groupby(grouper).high.idxmax()).time]
+        )
+        - np.array(
+            [
+                t.minute / 60
+                for t in pd.DatetimeIndex(df.groupby(grouper).high.idxmax()).time
+            ]
+        )
+    )
 
-    day_low_time = pd.Series(datetime.time(13,0).hour - np.array([t.hour for t in pd.DatetimeIndex(df.groupby(grouper).low.idxmax()).time]) - np.array([t.minute / 60 for t in pd.DatetimeIndex(df.groupby(grouper).low.idxmax()).time]))
+    day_low_time = pd.Series(
+        datetime.time(13, 0).hour
+        - np.array(
+            [t.hour for t in pd.DatetimeIndex(df.groupby(grouper).low.idxmax()).time]
+        )
+        - np.array(
+            [
+                t.minute / 60
+                for t in pd.DatetimeIndex(df.groupby(grouper).low.idxmax()).time
+            ]
+        )
+    )
 
     trade_df = pd.concat(
         [
@@ -603,7 +625,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
         "max_high",
         "min_low",
         "eod_close",
-        "time_remaining_from_high", # in hours
+        "time_remaining_from_high",  # in hours
         "time_remaining_from_low",
     ]
 
@@ -628,67 +650,121 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
             return x.R + level_buffer - x.eod_close
 
     def delta_premium_sold(x):
-        if x["Spread Type"] == "PCS":
-            short_strike = x.S - level_buffer
-            long_strike = x.S - level_buffer - 1
-            short_strike_prem = putPrice(
-                x.bar2_open, short_strike, r=0.028, sigma=0.2, t=1 / 365
-            )
-            long_strike_prem = putPrice(
-                x.bar2_open, long_strike, r=0.028, sigma=0.2, t=1 / 365
-            )
-            prem = short_strike_prem - long_strike_prem
-        elif x["Spread Type"] == "CCS":
-            short_strike = x.R + level_buffer
-            long_strike = x.R + level_buffer + 1
-            short_strike_prem = callPrice(
-                x.bar2_open, short_strike, r=0.028, sigma=0.2, t=1 / 365
-            )
-            long_strike_prem = callPrice(
-                x.bar2_open, long_strike, r=0.028, sigma=0.2, t=1 / 365
-            )
-            prem = short_strike_prem - long_strike_prem
+        # if x["Spread Type"] == "PCS":
+        #     short_strike = x.S - level_buffer
+        #     long_strike = x.S - level_buffer - 1
+        #     short_strike_prem = putPrice(
+        #         x.bar2_open, short_strike, r=0.028, sigma=0.2, t=1 / 365
+        #     )
+        #     long_strike_prem = putPrice(
+        #         x.bar2_open, long_strike, r=0.028, sigma=0.2, t=1 / 365
+        #     )
+        #     prem = short_strike_prem - long_strike_prem
+        # elif x["Spread Type"] == "CCS":
+        #     short_strike = x.R + level_buffer
+        #     long_strike = x.R + level_buffer + 1
+        #     short_strike_prem = callPrice(
+        #         x.bar2_open, short_strike, r=0.028, sigma=0.2, t=1 / 365
+        #     )
+        #     long_strike_prem = callPrice(
+        #         x.bar2_open, long_strike, r=0.028, sigma=0.2, t=1 / 365
+        #     )
+        #     prem = short_strike_prem - long_strike_prem
+        # else:
+        #     prem = np.nan
+        if x.Delta > 0:
+            prem = (0.5 / (np.exp(0.45 * x.Delta)))
         else:
-            prem = np.nan
-        return prem
+            prem = (0.5 / (np.exp(0.25 * x.Delta)))
+        return np.clip(prem, 0, 1)
 
     def retrace_premium(x):
-        if x["Spread Type"] == "PCS":
-            short_strike = x.S - level_buffer
-            long_strike = x.S - level_buffer - 1
-            short_strike_prem = putPrice(
-                x.min_low, short_strike, r=0.028, sigma=0.2, t=(x.time_remaining_from_low / 24) / 365
-            )
-            long_strike_prem = putPrice(
-                x.min_low, long_strike, r=0.028, sigma=0.2, t=(x.time_remaining_from_low / 24) / 365
-            )
-            prem = short_strike_prem - long_strike_prem
-        elif x["Spread Type"] == "CCS":
-            short_strike = x.R + level_buffer
-            long_strike = x.R + level_buffer + 1
-            short_strike_prem = callPrice(
-                x.max_high, short_strike, r=0.028, sigma=0.2, t=(x.time_remaining_from_high/24) / 365
-            )
-            long_strike_prem = callPrice(
-                x.max_high, long_strike, r=0.028, sigma=0.2, t=(x.time_remaining_from_high/24) / 365
-            )
-            prem = short_strike_prem - long_strike_prem
-        return prem
+        # if x["Spread Type"] == "PCS":
+        #     short_strike = x.S - level_buffer
+        #     long_strike = x.S - level_buffer - 1
+        #     short_strike_prem = putPrice(
+        #         x.min_low,
+        #         short_strike,
+        #         r=0.028,
+        #         sigma=0.2,
+        #         t=(x.time_remaining_from_low / 24) / 365,
+        #     )
+        #     long_strike_prem = putPrice(
+        #         x.min_low,
+        #         long_strike,
+        #         r=0.028,
+        #         sigma=0.2,
+        #         t=(x.time_remaining_from_low / 24) / 365,
+        #     )
+        #     prem = short_strike_prem - long_strike_prem
+        # elif x["Spread Type"] == "CCS":
+        #     short_strike = x.R + level_buffer
+        #     long_strike = x.R + level_buffer + 1
+        #     short_strike_prem = callPrice(
+        #         x.max_high,
+        #         short_strike,
+        #         r=0.028,
+        #         sigma=0.2,
+        #         t=(x.time_remaining_from_high / 24) / 365,
+        #     )
+        #     long_strike_prem = callPrice(
+        #         x.max_high,
+        #         long_strike,
+        #         r=0.028,
+        #         sigma=0.2,
+        #         t=(x.time_remaining_from_high / 24) / 365,
+        #     )
+        #     prem = short_strike_prem - long_strike_prem
+        if x.Retrace > 0:
+            prem = (0.5 / (np.exp(0.45 * x.Retrace)))
+        else:
+            prem = (0.5 / (np.exp(0.25 * x.Retrace)))
+        return np.clip(prem, 0, 1)
+
+        # if x["Spread Type"] == "PCS":
+        #     short_strike = x.S - level_buffer
+        #     long_strike = x.S - level_buffer - 1
+        #     short_strike_prem = putPrice(
+        #         x.min_low, short_strike, r=0.028, sigma=0.2, t=(0.5 / 24) / 365
+        #     )
+        #     long_strike_prem = putPrice(
+        #         x.min_low, long_strike, r=0.028, sigma=0.2, t=(0.5 / 24) / 365
+        #     )
+        #     prem = short_strike_prem - long_strike_prem
+        # elif x["Spread Type"] == "CCS":
+        #     short_strike = x.R + level_buffer
+        #     long_strike = x.R + level_buffer + 1
+        #     short_strike_prem = callPrice(
+        #         x.max_high, short_strike, r=0.028, sigma=0.2, t=(0.5/24) / 365
+        #     )
+        #     long_strike_prem = callPrice(
+        #         x.max_high, long_strike, r=0.028, sigma=0.2, t=(0.5/24) / 365
+        #     )
+        #     prem = short_strike_prem - long_strike_prem
+        # return prem
 
     def won(x):
         if x["Spread Type"] == "PCS":
-            if x.eod_close > x.S - level_buffer and x["Retrace Premium"] < stoploss_prem:
+            if (
+                x.eod_close > x.S - level_buffer
+                and x["Retrace Premium"] < stoploss_prem
+            ):
                 return 1
             else:
                 return 0
         elif x["Spread Type"] == "CCS":
-            if x.eod_close < x.R + level_buffer and x["Retrace Premium"] < stoploss_prem:
+            if (
+                x.eod_close < x.R + level_buffer
+                and x["Retrace Premium"] < stoploss_prem
+            ):
                 return 1
             else:
                 return 0
 
     def premium_bought(x):
-        if x["Retrace Premium"] >= stoploss_prem:
+        if x["Delta Premium"] >= stoploss_prem:
+            return -x["Delta Premium"] - 0.02
+        elif x["Retrace Premium"] >= stoploss_prem:
             return -stoploss_prem
         elif x.EOD_proximity >= 0 and x["Delta Premium"] != 0:
             return 0
@@ -726,7 +802,13 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
     winrate_stats = trade_df.groupby("Spread Type").Won.describe().round(2)
     delta_stats = trade_df.groupby("Spread Type").Delta.describe().round(2)
     retrace_stats = trade_df.groupby("Spread Type").Retrace.describe().round(2)
-    expected_returns = trade_df.groupby("Spread Type")["Delta Premium"].mean() * trade_df.groupby("Spread Type")["Won"].mean() + (stoploss_prem - trade_df.groupby("Spread Type")["Delta Premium"].mean()) * (1 - trade_df.groupby("Spread Type")["Won"].mean())
+    expected_returns = trade_df.groupby("Spread Type")[
+        "Delta Premium"
+    ].mean() * trade_df.groupby("Spread Type")["Won"].mean() + (
+        stoploss_prem - trade_df.groupby("Spread Type")["Delta Premium"].mean()
+    ) * (
+        1 - trade_df.groupby("Spread Type")["Won"].mean()
+    )
     delta_premium_mean = trade_df["Delta Premium"].mean()
 
     out = pd.DataFrame(
