@@ -551,6 +551,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
     df = pd.concat(
         [data.close, data.high, data.low, data.open, mvwap, resistance, support], axis=1
     )
+    df.columns = ["close", "high", "low", "open", "VWAP", "R", "S"]
     if skip_month_day1:
         df = df[df.index.day != 1]  # skip first day of month
     df.dropna(inplace=True)
@@ -591,7 +592,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
     trade_df = pd.concat(
         [
             pd.Series(df.groupby(grouper).close.first().index),  # date
-            df.groupby(grouper)[["close", "open", "VWAP_M", "R", "S"]]
+            df.groupby(grouper)[["close", "open", "VWAP", "R", "S"]]
             .first()
             .reset_index()
             .drop(columns="index"),  # first bar of day
@@ -618,7 +619,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
         "date",
         "bod_close",
         "bod_open",
-        "VWAP_M",
+        "VWAP",
         "R",
         "S",
         "bar2_open",
@@ -630,9 +631,9 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
     ]
 
     def trade_type(x):
-        if x.bod_close < x.VWAP_M:
+        if x.bod_close < x.VWAP:
             return "CCS"
-        elif x.bod_close > x.VWAP_M:
+        elif x.bod_close > x.VWAP:
             return "PCS"
         else:
             return "none"
@@ -650,32 +651,32 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
             return x.R + level_buffer - x.eod_close
 
     def delta_premium_sold(x):
-        # if x["Spread Type"] == "PCS":
-        #     short_strike = x.S - level_buffer
-        #     long_strike = x.S - level_buffer - 1
-        #     short_strike_prem = putPrice(
-        #         x.bar2_open, short_strike, r=0.028, sigma=0.2, t=1 / 365
-        #     )
-        #     long_strike_prem = putPrice(
-        #         x.bar2_open, long_strike, r=0.028, sigma=0.2, t=1 / 365
-        #     )
-        #     prem = short_strike_prem - long_strike_prem
-        # elif x["Spread Type"] == "CCS":
-        #     short_strike = x.R + level_buffer
-        #     long_strike = x.R + level_buffer + 1
-        #     short_strike_prem = callPrice(
-        #         x.bar2_open, short_strike, r=0.028, sigma=0.2, t=1 / 365
-        #     )
-        #     long_strike_prem = callPrice(
-        #         x.bar2_open, long_strike, r=0.028, sigma=0.2, t=1 / 365
-        #     )
-        #     prem = short_strike_prem - long_strike_prem
-        # else:
-        #     prem = np.nan
-        if x.Delta > 0:
-            prem = (0.5 / (np.exp(0.45 * x.Delta)))
+        if x["Spread Type"] == "PCS":
+            short_strike = x.S - level_buffer
+            long_strike = x.S - level_buffer - 1
+            short_strike_prem = putPrice(
+                x.bar2_open, short_strike, r=0.028, sigma=0.19, t=0.5 / 365
+            )
+            long_strike_prem = putPrice(
+                x.bar2_open, long_strike, r=0.028, sigma=0.19, t=0.5 / 365
+            )
+            prem = short_strike_prem - long_strike_prem
+        elif x["Spread Type"] == "CCS":
+            short_strike = x.R + level_buffer
+            long_strike = x.R + level_buffer + 1
+            short_strike_prem = callPrice(
+                x.bar2_open, short_strike, r=0.028, sigma=0.19, t=0.5 / 365
+            )
+            long_strike_prem = callPrice(
+                x.bar2_open, long_strike, r=0.028, sigma=0.19, t=0.5 / 365
+            )
+            prem = short_strike_prem - long_strike_prem
         else:
-            prem = (0.5 / (np.exp(0.25 * x.Delta)))
+            prem = np.nan
+        # if x.Delta > 0:
+        #     prem = (0.5 / (np.exp(0.45 * x.Delta)))
+        # else:
+        #     prem = (0.5 / (np.exp(0.25 * x.Delta)))
         return np.clip(prem, 0, 1)
 
     def retrace_premium(x):
@@ -704,44 +705,44 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
         #         x.max_high,
         #         short_strike,
         #         r=0.028,
-        #         sigma=0.2,
+        #         sigma=0.19,
         #         t=(x.time_remaining_from_high / 24) / 365,
         #     )
         #     long_strike_prem = callPrice(
         #         x.max_high,
         #         long_strike,
         #         r=0.028,
-        #         sigma=0.2,
+        #         sigma=0.19,
         #         t=(x.time_remaining_from_high / 24) / 365,
         #     )
         #     prem = short_strike_prem - long_strike_prem
-        if x.Retrace > 0:
-            prem = (0.5 / (np.exp(0.45 * x.Retrace)))
-        else:
-            prem = (0.5 / (np.exp(0.25 * x.Retrace)))
-        return np.clip(prem, 0, 1)
+        # if x.Retrace > 0:
+        #     prem = (0.5 / (np.exp(0.45 * x.Retrace)))
+        # else:
+        #     prem = (0.5 / (np.exp(0.25 * x.Retrace)))
+        # return np.clip(prem, 0, 1)
 
-        # if x["Spread Type"] == "PCS":
-        #     short_strike = x.S - level_buffer
-        #     long_strike = x.S - level_buffer - 1
-        #     short_strike_prem = putPrice(
-        #         x.min_low, short_strike, r=0.028, sigma=0.2, t=(0.5 / 24) / 365
-        #     )
-        #     long_strike_prem = putPrice(
-        #         x.min_low, long_strike, r=0.028, sigma=0.2, t=(0.5 / 24) / 365
-        #     )
-        #     prem = short_strike_prem - long_strike_prem
-        # elif x["Spread Type"] == "CCS":
-        #     short_strike = x.R + level_buffer
-        #     long_strike = x.R + level_buffer + 1
-        #     short_strike_prem = callPrice(
-        #         x.max_high, short_strike, r=0.028, sigma=0.2, t=(0.5/24) / 365
-        #     )
-        #     long_strike_prem = callPrice(
-        #         x.max_high, long_strike, r=0.028, sigma=0.2, t=(0.5/24) / 365
-        #     )
-        #     prem = short_strike_prem - long_strike_prem
-        # return prem
+        if x["Spread Type"] == "PCS":
+            short_strike = x.S - level_buffer
+            long_strike = x.S - level_buffer - 1
+            short_strike_prem = putPrice(
+                x.min_low, short_strike, r=0.028, sigma=0.19, t=(0.5) / 365
+            )
+            long_strike_prem = putPrice(
+                x.min_low, long_strike, r=0.028, sigma=0.19, t=(0.5) / 365
+            )
+            prem = short_strike_prem - long_strike_prem
+        elif x["Spread Type"] == "CCS":
+            short_strike = x.R + level_buffer
+            long_strike = x.R + level_buffer + 1
+            short_strike_prem = callPrice(
+                x.max_high, short_strike, r=0.028, sigma=0.19, t=(0.5) / 365
+            )
+            long_strike_prem = callPrice(
+                x.max_high, long_strike, r=0.028, sigma=0.19, t=(0.5) / 365
+            )
+            prem = short_strike_prem - long_strike_prem
+        return prem
 
     def won(x):
         if x["Spread Type"] == "PCS":
@@ -763,7 +764,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
 
     def premium_bought(x):
         if x["Delta Premium"] >= stoploss_prem:
-            return -x["Delta Premium"] - 0.02
+            return -x["Delta Premium"] - 0.02 # slippage of 0.02
         elif x["Retrace Premium"] >= stoploss_prem:
             return -stoploss_prem
         elif x.EOD_proximity >= 0 and x["Delta Premium"] != 0:
@@ -800,6 +801,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
     trade_df["Won"] = trade_df.apply(won, axis=1)
 
     winrate_stats = trade_df.groupby("Spread Type").Won.describe().round(2)
+    winrate_overall = trade_df.Won.mean().round(2)
     delta_stats = trade_df.groupby("Spread Type").Delta.describe().round(2)
     retrace_stats = trade_df.groupby("Spread Type").Retrace.describe().round(2)
     expected_returns = trade_df.groupby("Spread Type")[
@@ -822,9 +824,10 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
             winrate_stats.loc["PCS", "mean"],
             delta_stats.loc["PCS", "mean"],
             retrace_stats.loc["PCS", "mean"],
+            winrate_overall,
             expected_returns.loc["PCS"],
             trade_df.iloc[-1]["bod_open"],
-            trade_df.iloc[-1]["VWAP_M"],
+            trade_df.iloc[-1]["VWAP"],
             trade_df.iloc[-1]["Spread Type"],
             trade_df.iloc[-1]["R"] + level_buffer,
             trade_df.iloc[-1]["S"] - level_buffer,
@@ -853,9 +856,10 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
             "Winrate_PCS_mean",
             "Delta_PCS_mean",
             "Retrace_PCS_mean",
+            "Winrate_overall",
             "Expected_Returns_PCS_mean",
             "bod_open",
-            "VWAP_M",
+            "VWAP",
             "Spread Type",
             "R",
             "S",
@@ -880,7 +884,7 @@ def compute_zerodte_spread_stats(data, mvwap=None, nearest_levels=None, level_bu
 
 
 def zero_dte_spread_logic(
-    data, mvwap=None, nearest_levels=None, level_buffer=None, underlying_symbol=None, spread_width = 1, target_credit=None, shift=True
+    data, mvwap=None, nearest_levels=None, level_buffer=None, underlying_symbol=None, spread_width = 1, target_credit=None, shift=True, vwap_timeframe="M"
 ):
     data = data.copy().reset_index()
     data.columns = data.columns.str.lower()
@@ -894,7 +898,7 @@ def zero_dte_spread_logic(
     resistance = nearest_levels["R"]
 
     if mvwap is None:
-        mvwap = calc_vwap(data, "M")
+        mvwap = calc_vwap(data, vwap_timeframe)
 
     if level_buffer is None:
         days = np.unique(data.index.date)
@@ -933,12 +937,12 @@ def zero_dte_spread_logic(
     )
     # df = df[df.index.day != 1]  # skip first day of month
     df.dropna(inplace=True)
-    df.columns = ["close", "high", "low", "open", "VWAP_M", "R", "S"]
+    df.columns = ["close", "high", "low", "open", "VWAP", "R", "S"]
 
     def trade_type(x):
-        if x.close < x.VWAP_M:
+        if x.close < x.VWAP:
             return "CCS"
-        elif x.close > x.VWAP_M:
+        elif x.close > x.VWAP:
             return "PCS"
         else:
             return "none"
