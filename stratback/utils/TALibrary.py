@@ -549,7 +549,7 @@ def compute_zerodte_spread_stats(
     series=None,
     nearest_levels=None,
     level_buffer=1,
-    stoploss_prem=0.5,
+    stoploss_delta=-1,
     skip_month_day1=False,
     reversed_direction=False,
 ):
@@ -564,7 +564,8 @@ def compute_zerodte_spread_stats(
     if series is None:
         series = calc_prank(data, "M")
     df = pd.concat(
-        [data.close, data.high, data.low, data.open, series, resistance, support], axis=1
+        [data.close, data.high, data.low, data.open, series, resistance, support],
+        axis=1,
     )
     df.columns = ["close", "high", "low", "open", "series", "R", "S"]
     if skip_month_day1:
@@ -579,7 +580,7 @@ def compute_zerodte_spread_stats(
     )  # second bar's open
     bar2_open.columns = ["bar2_open"]
     day_high_time = pd.Series(
-        datetime.time(13, 0).hour
+        datetime.time(13, 15).hour
         - np.array(
             [t.hour for t in pd.DatetimeIndex(df.groupby(grouper).high.idxmax()).time]
         )
@@ -592,7 +593,7 @@ def compute_zerodte_spread_stats(
     )
 
     day_low_time = pd.Series(
-        datetime.time(13, 0).hour
+        datetime.time(13, 15).hour
         - np.array(
             [t.hour for t in pd.DatetimeIndex(df.groupby(grouper).low.idxmax()).time]
         )
@@ -646,7 +647,7 @@ def compute_zerodte_spread_stats(
     ]
 
     def trade_type(x):
-        if x.bod_close < x.series:
+        if x.bod_close <= x.series:
             if not reversed_direction:
                 return "CCS"
             else:
@@ -732,7 +733,7 @@ def compute_zerodte_spread_stats(
         if x["Spread Type"] == "PCS":
             if (
                 x.eod_close > x.S - level_buffer
-                and x["Retrace Premium"] < stoploss_prem
+                and x["Retrace"] > stoploss_delta
             ):
                 return 1
             else:
@@ -740,17 +741,56 @@ def compute_zerodte_spread_stats(
         elif x["Spread Type"] == "CCS":
             if (
                 x.eod_close < x.R + level_buffer
-                and x["Retrace Premium"] < stoploss_prem
+                and x["Retrace"] > stoploss_delta
             ):
                 return 1
             else:
                 return 0
 
     def premium_bought(x):
-        if x["Delta Premium"] >= stoploss_prem:
-            return -x["Delta Premium"] - 0.02  # slippage of 0.02
-        elif x["Retrace Premium"] >= stoploss_prem:
-            return -stoploss_prem
+        if x["Retrace"] < stoploss_delta:
+            try:
+                if x["Spread Type"] == "PCS":
+                    short_strike = x.S - level_buffer
+                    long_strike = x.S - level_buffer - 1
+                    short_strike_prem = putPrice(
+                        short_strike + stoploss_delta,
+                        short_strike,
+                        r=0.028,
+                        sigma=0.19,
+                        t=(0.5) / 365,
+                    )
+                    long_strike_prem = putPrice(
+                        short_strike + stoploss_delta,
+                        long_strike,
+                        r=0.028,
+                        sigma=0.19,
+                        t=(0.5) / 365,
+                    )
+                    prem = -(short_strike_prem - long_strike_prem)
+                elif x["Spread Type"] == "CCS":
+                    short_strike = x.R + level_buffer
+                    long_strike = x.R + level_buffer + 1
+                    short_strike_prem = callPrice(
+                        short_strike - stoploss_delta,
+                        short_strike,
+                        r=0.028,
+                        sigma=0.19,
+                        t=(0.5) / 365,
+                    )
+                    long_strike_prem = callPrice(
+                        short_strike - stoploss_delta,
+                        long_strike,
+                        r=0.028,
+                        sigma=0.19,
+                        t=(0.5) / 365,
+                    )
+                    prem = -(short_strike_prem - long_strike_prem)
+                else:
+                    prem = np.nan
+            except Exception:
+                prem = 0
+            return prem
         elif x.EOD_proximity >= 0 and x["Delta Premium"] != 0:
             return 0
         elif x.EOD_proximity < 0:
@@ -759,7 +799,7 @@ def compute_zerodte_spread_stats(
             return np.nan
 
     def stoplossed(x):
-        if x["Retrace Premium"] >= stoploss_prem:
+        if x["Retrace"] < stoploss_delta:
             return True
         else:
             return False
@@ -783,10 +823,9 @@ def compute_zerodte_spread_stats(
     trade_df["Stoplossed"] = trade_df.apply(stoplossed, axis=1)
 
     trade_df["Won"] = trade_df.apply(won, axis=1)
-
+    winrate_overall = trade_df.Won.mean().round(2)
     delta_premium_mean = trade_df["Delta Premium"].mean()
     retrace_premium_mean = trade_df["Retrace Premium"].mean()
-    winrate_overall = trade_df.Won.mean().round(2)
 
     out = pd.DataFrame(
         [
@@ -840,8 +879,8 @@ def compute_zerodte_spread_stats(
             "EOD_proximity",
         ],
     ).T
-    # print(out)
     return out
+
 
 
 def zero_dte_spread_logic(
@@ -854,7 +893,7 @@ def zero_dte_spread_logic(
     target_credit=None,
     shift=True,
     series_timeframe="M",
-    stoploss=0.5,
+    stoploss_delta=-1,
     lookback=50,
 ):
     data = data.copy().reset_index()
@@ -882,7 +921,9 @@ def zero_dte_spread_logic(
                 series=series_segment,
                 nearest_levels=nearest_levels_segment,
                 level_buffer=k,
-                stoploss_prem=stoploss,
+                stoploss_delta=stoploss_delta,
+                skip_month_day1=False,
+                reversed_direction=False,
             )
             if 0.7 < stats["Winrate_overall"][0]:
                 level_buffer = k
@@ -947,7 +988,9 @@ def zero_dte_spread_logic(
             series=series_segment,
             nearest_levels=nearest_levels_segment,
             level_buffer=level_buffer,
-            stoploss_prem=stoploss,
+            stoploss_delta=stoploss_delta,
+            skip_month_day1=False,
+            reversed_direction=False,
         )
 
         def credit(x):
