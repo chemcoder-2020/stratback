@@ -853,7 +853,7 @@ def zero_dte_spread_logic(
     spread_width=1,
     target_credit=None,
     shift=True,
-    vwap_timeframe="M",
+    series_timeframe="M",
     stoploss=0.5,
     lookback=50,
 ):
@@ -869,7 +869,7 @@ def zero_dte_spread_logic(
     resistance = nearest_levels["R"]
 
     if series is None:
-        series = calc_vwap(data, vwap_timeframe)
+        series = calc_prank(data, series_timeframe)
 
     if level_buffer is None:
         days = np.unique(data.index.date)
