@@ -826,6 +826,7 @@ def compute_zerodte_spread_stats(
     winrate_overall = trade_df.Won.mean().round(2)
     delta_premium_mean = trade_df["Delta Premium"].mean()
     retrace_premium_mean = trade_df["Retrace Premium"].mean()
+    pnl_mean = trade_df["PnL"].mean()
 
     out = pd.DataFrame(
         [
@@ -851,6 +852,7 @@ def compute_zerodte_spread_stats(
             trade_df.iloc[-1]["Premium Bought"],
             trade_df.iloc[-1]["Stoplossed"],
             trade_df.iloc[-1]["PnL"],
+            pnl_mean,
             trade_df.iloc[-1]["EOD_proximity"],
         ],
         index=[
@@ -876,6 +878,7 @@ def compute_zerodte_spread_stats(
             "Premium Bought",
             "Stoplossed",
             "PnL",
+            "PnL Mean",
             "EOD_proximity",
         ],
     ).T
